@@ -1,0 +1,11 @@
+[package]
+name = "zellij-hud"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+zellij-tile = "0.43.1"
+
+[profile.release]
+opt-level = "s"
+lto = true
