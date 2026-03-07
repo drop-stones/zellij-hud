@@ -1,0 +1,6 @@
+// Development layout for testing zellij-hud plugin
+// Start zellij normally, then load the plugin with:
+//   zellij plugin -- file:/home/drop-stones/repos/zellij/zellij-hud/target/wasm32-wasip1/release/zellij-hud.wasm
+layout {
+    pane
+}
