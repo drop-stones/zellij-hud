@@ -2,63 +2,105 @@ use zellij_tile::prelude::*;
 
 use std::collections::BTreeMap;
 
-/// PoC: On-demand floating status bar for zellij.
+const CONFIG_IS_HUD: &str = "is_hud";
+
+/// On-demand floating status bar for zellij.
 ///
-/// - Hidden in Locked mode (zero footprint)
-/// - Appears as a floating bar at the bottom on mode change
-/// - Shows current mode + tab list
-#[derive(Default)]
+/// Architecture: two roles in one plugin binary.
+///
+/// 1. **Daemon** (is_hud = false): Runs hidden in the background,
+///    listens to ModeUpdate events. Spawns/closes HUD instances.
+///
+/// 2. **HUD** (is_hud = true): Spawned as a floating pane by the daemon.
+///    Renders the status bar. Closes itself when mode returns to Locked.
 struct State {
+    is_hud: bool,
     mode: InputMode,
     tabs: Vec<TabInfo>,
-    is_hidden: bool,
     has_permission: bool,
-    plugin_id: Option<u32>,
-    display_rows: usize,
-    display_cols: usize,
+    hud_is_open: bool,
+}
+
+impl Default for State {
+    fn default() -> Self {
+        Self {
+            is_hud: false,
+            mode: InputMode::Locked,
+            tabs: Vec::new(),
+            has_permission: false,
+            hud_is_open: false,
+        }
+    }
 }
 
 register_plugin!(State);
 
 impl State {
-    /// Reposition the floating pane to the bottom of the screen
-    fn reposition_to_bottom(&self) {
-        if let Some(id) = self.plugin_id {
-            let height = 3;
-            let width_pct = "100%".to_string();
-            // Position at bottom: y = display_rows - height - 1 (for border)
-            let y = if self.display_rows > height + 1 {
-                self.display_rows - height - 1
-            } else {
-                0
-            };
-            if let Some(coords) = FloatingPaneCoordinates::new(
-                Some("0".to_string()),          // x: left edge
-                Some(format!("{}", y)),          // y: bottom
-                Some(width_pct),                // width: full
-                Some(format!("{}", height)),     // height: 3 rows
-                Some(true),                     // pinned: don't lose focus
-            ) {
-                change_floating_panes_coordinates(vec![
-                    (PaneId::Plugin(id), coords)
-                ]);
-            }
+    fn spawn_hud(&mut self) {
+        if self.hud_is_open {
+            return;
         }
+        let mut config = BTreeMap::new();
+        config.insert(CONFIG_IS_HUD.to_string(), "true".to_string());
+
+        let msg = MessageToPlugin::new("spawn_hud")
+            .with_plugin_url("zellij:OWN_URL")
+            .with_plugin_config(config)
+            .with_floating_pane_coordinates(self.hud_coordinates())
+            .new_plugin_instance_should_have_pane_title("hud".to_string());
+
+        pipe_message_to_plugin(msg);
+        self.hud_is_open = true;
+    }
+
+    fn hud_coordinates(&self) -> FloatingPaneCoordinates {
+        // Get display dimensions from active tab
+        let (rows, cols) = self.tabs.iter()
+            .find(|t| t.active)
+            .map(|t| (t.display_area_rows, t.display_area_columns))
+            .unwrap_or((24, 80));
+
+        let height = 2;
+        let y = rows.saturating_sub(height);
+
+        FloatingPaneCoordinates::new(
+            Some("0".to_string()),
+            Some(format!("{}", y)),
+            Some(format!("{}", cols)),
+            Some(format!("{}", height)),
+            Some(true), // pinned
+        ).unwrap_or_default()
     }
 }
 
 impl ZellijPlugin for State {
-    fn load(&mut self, _configuration: BTreeMap<String, String>) {
-        request_permission(&[
-            PermissionType::ReadApplicationState,
-            PermissionType::ChangeApplicationState,
-        ]);
-        subscribe(&[
-            EventType::ModeUpdate,
-            EventType::TabUpdate,
-            EventType::PermissionRequestResult,
-        ]);
-        self.is_hidden = false; // Start visible until permission granted
+    fn load(&mut self, configuration: BTreeMap<String, String>) {
+        self.is_hud = configuration.get(CONFIG_IS_HUD).map_or(false, |v| v == "true");
+
+        if self.is_hud {
+            // HUD instance: subscribe to mode/tab updates to render and close
+            request_permission(&[
+                PermissionType::ReadApplicationState,
+                PermissionType::ChangeApplicationState,
+            ]);
+            subscribe(&[
+                EventType::ModeUpdate,
+                EventType::TabUpdate,
+                EventType::PermissionRequestResult,
+            ]);
+        } else {
+            // Daemon instance: hide self and watch for mode changes
+            request_permission(&[
+                PermissionType::ReadApplicationState,
+                PermissionType::ChangeApplicationState,
+                PermissionType::MessageAndLaunchOtherPlugins,
+            ]);
+            subscribe(&[
+                EventType::ModeUpdate,
+                EventType::TabUpdate,
+                EventType::PermissionRequestResult,
+            ]);
+        }
     }
 
     fn update(&mut self, event: Event) -> bool {
@@ -66,26 +108,28 @@ impl ZellijPlugin for State {
             Event::PermissionRequestResult(result) => {
                 if result == PermissionStatus::Granted {
                     self.has_permission = true;
-                    // Get our plugin ID for repositioning
-                    let ids = get_plugin_ids();
-                    self.plugin_id = Some(ids.plugin_id);
-                    // Hide initially
-                    hide_self();
-                    self.is_hidden = true;
+                    if !self.is_hud {
+                        // Daemon: hide immediately
+                        hide_self();
+                    }
                 }
                 true
             }
             Event::ModeUpdate(mode_info) => {
                 let new_mode = mode_info.mode;
 
-                if self.has_permission {
-                    if new_mode != InputMode::Locked && self.is_hidden {
-                        show_self(true);
-                        self.is_hidden = false;
-                        self.reposition_to_bottom();
-                    } else if new_mode == InputMode::Locked && !self.is_hidden {
-                        hide_self();
-                        self.is_hidden = true;
+                if self.is_hud {
+                    // HUD instance: close when returning to Locked
+                    if new_mode == InputMode::Locked {
+                        close_self();
+                        return false;
+                    }
+                } else if self.has_permission {
+                    // Daemon: spawn HUD on non-Locked, track close on Locked
+                    if new_mode != InputMode::Locked && !self.hud_is_open {
+                        self.spawn_hud();
+                    } else if new_mode == InputMode::Locked {
+                        self.hud_is_open = false;
                     }
                 }
 
@@ -93,11 +137,6 @@ impl ZellijPlugin for State {
                 true
             }
             Event::TabUpdate(tabs) => {
-                // Use tab info to get display dimensions
-                if let Some(tab) = tabs.iter().find(|t| t.active) {
-                    self.display_rows = tab.display_area_rows;
-                    self.display_cols = tab.display_area_columns;
-                }
                 self.tabs = tabs;
                 true
             }
@@ -110,7 +149,11 @@ impl ZellijPlugin for State {
     }
 
     fn render(&mut self, _rows: usize, cols: usize) {
-        // Line 1: mode + tabs (bar style)
+        if !self.is_hud {
+            return; // Daemon renders nothing
+        }
+
+        // Bar: mode | tabs
         let mode_str = format!(" {:?} ", self.mode);
         let tab_str: String = self.tabs.iter().map(|t| {
             if t.active {
@@ -121,7 +164,6 @@ impl ZellijPlugin for State {
         }).collect();
 
         let line = format!("{}│{}", mode_str, tab_str);
-        // Pad to fill width
         let padding = cols.saturating_sub(line.len());
         println!("{}{}", line, " ".repeat(padding));
     }
