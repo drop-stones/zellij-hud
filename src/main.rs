@@ -1,6 +1,8 @@
 use zellij_tile::prelude::*;
 
 use std::collections::BTreeMap;
+use std::path::PathBuf;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 const CONFIG_IS_HUD: &str = "is_hud";
 
@@ -16,6 +18,7 @@ const CONFIG_IS_HUD: &str = "is_hud";
 struct State {
     is_hud: bool,
     mode: InputMode,
+    mode_info: Option<ModeInfo>,
     tabs: Vec<TabInfo>,
     has_permission: bool,
     hud_is_open: bool,
@@ -23,6 +26,10 @@ struct State {
     own_plugin_id: Option<u32>,
     /// HUD: 1-based index of the tab the HUD is currently on
     active_tab_idx: usize,
+    /// HUD: initial CWD of the plugin
+    cwd: PathBuf,
+    /// HUD: session name
+    session_name: String,
 }
 
 impl Default for State {
@@ -30,11 +37,14 @@ impl Default for State {
         Self {
             is_hud: false,
             mode: InputMode::Locked,
+            mode_info: None,
             tabs: Vec::new(),
             has_permission: false,
             hud_is_open: false,
             own_plugin_id: None,
             active_tab_idx: 0,
+            cwd: PathBuf::new(),
+            session_name: String::new(),
         }
     }
 }
@@ -60,7 +70,6 @@ impl State {
     }
 
     fn hud_coordinates(&self) -> FloatingPaneCoordinates {
-        // Get display dimensions from active tab
         let (rows, cols) = self.tabs.iter()
             .find(|t| t.active)
             .map(|t| (t.display_area_rows, t.display_area_columns))
@@ -74,8 +83,50 @@ impl State {
             Some(format!("{}", y)),
             Some(format!("{}", cols)),
             Some(format!("{}", height)),
-            Some(true), // pinned
+            Some(true),
         ).unwrap_or_default()
+    }
+
+    fn format_time(&self) -> String {
+        if let Ok(dur) = SystemTime::now().duration_since(UNIX_EPOCH) {
+            let total_secs = dur.as_secs();
+            // UTC time components
+            let secs = total_secs % 60;
+            let mins = (total_secs / 60) % 60;
+            let hours = (total_secs / 3600) % 24;
+            // Adjust for JST (UTC+9)
+            let hours_jst = (hours + 9) % 24;
+            format!("{:02}:{:02}:{:02}", hours_jst, mins, secs)
+        } else {
+            "--:--:--".to_string()
+        }
+    }
+
+    fn format_cwd(&self) -> String {
+        if let Some(name) = self.cwd.file_name() {
+            name.to_string_lossy().to_string()
+        } else {
+            self.cwd.to_string_lossy().to_string()
+        }
+    }
+
+    fn mode_icon(&self) -> &str {
+        match self.mode {
+            InputMode::Normal => "󰰓",
+            InputMode::Locked => "󰌾",
+            InputMode::Pane => "󰘖",
+            InputMode::Tab => "󰓩",
+            InputMode::Resize => "󰩨",
+            InputMode::Move => "󰆾",
+            InputMode::Scroll => "󰠶",
+            InputMode::Session => "󱂬",
+            InputMode::Search => "󰍉",
+            InputMode::RenameTab => "󰏫",
+            InputMode::RenamePane => "󰏫",
+            InputMode::EnterSearch => "󰍉",
+            InputMode::Tmux => "󰰣",
+            InputMode::Prompt => "󰘥",
+        }
     }
 }
 
@@ -84,9 +135,12 @@ impl ZellijPlugin for State {
         self.is_hud = configuration.get(CONFIG_IS_HUD).map_or(false, |v| v == "true");
 
         if self.is_hud {
-            // HUD instance: get own plugin ID for tab following
             let ids = get_plugin_ids();
             self.own_plugin_id = Some(ids.plugin_id);
+            self.cwd = ids.initial_cwd;
+
+            // Clear the frame title
+            rename_plugin_pane(ids.plugin_id, "");
 
             request_permission(&[
                 PermissionType::ReadApplicationState,
@@ -95,10 +149,13 @@ impl ZellijPlugin for State {
             subscribe(&[
                 EventType::ModeUpdate,
                 EventType::TabUpdate,
+                EventType::Timer,
                 EventType::PermissionRequestResult,
             ]);
+
+            // Start clock timer
+            set_timeout(1.0);
         } else {
-            // Daemon instance: hide self and watch for mode changes
             request_permission(&[
                 PermissionType::ReadApplicationState,
                 PermissionType::ChangeApplicationState,
@@ -118,7 +175,6 @@ impl ZellijPlugin for State {
                 if result == PermissionStatus::Granted {
                     self.has_permission = true;
                     if !self.is_hud {
-                        // Daemon: hide immediately
                         hide_self();
                     }
                 }
@@ -128,13 +184,14 @@ impl ZellijPlugin for State {
                 let new_mode = mode_info.mode;
 
                 if self.is_hud {
-                    // HUD instance: close when returning to Locked
                     if new_mode == InputMode::Locked {
                         close_self();
                         return false;
                     }
+                    self.session_name = mode_info.session_name
+                        .clone()
+                        .unwrap_or_default();
                 } else if self.has_permission {
-                    // Daemon: spawn HUD on non-Locked, track close on Locked
                     if new_mode != InputMode::Locked && !self.hud_is_open {
                         self.spawn_hud();
                     } else if new_mode == InputMode::Locked {
@@ -143,11 +200,11 @@ impl ZellijPlugin for State {
                 }
 
                 self.mode = new_mode;
+                self.mode_info = Some(mode_info);
                 true
             }
             Event::TabUpdate(tabs) => {
                 if self.is_hud {
-                    // Follow active tab if it changed (1-based index like compact-bar)
                     if let Some(active_tab_index) = tabs.iter().position(|t| t.active) {
                         let new_idx = active_tab_index + 1;
                         if self.active_tab_idx != new_idx {
@@ -165,6 +222,12 @@ impl ZellijPlugin for State {
                 self.tabs = tabs;
                 true
             }
+            Event::Timer(_) => {
+                if self.is_hud {
+                    set_timeout(1.0);
+                }
+                true
+            }
             _ => false,
         }
     }
@@ -175,21 +238,87 @@ impl ZellijPlugin for State {
 
     fn render(&mut self, _rows: usize, cols: usize) {
         if !self.is_hud {
-            return; // Daemon renders nothing
+            return;
         }
 
-        // Bar: mode | tabs
-        let mode_str = format!(" {:?} ", self.mode);
-        let tab_str: String = self.tabs.iter().map(|t| {
-            if t.active {
-                format!(" *{} ", t.name)
-            } else {
-                format!("  {}  ", t.name)
-            }
+        // === Left side ===
+        // Session name
+        let session_seg = format!(" 󰆍 {} ", self.session_name);
+        let sep = " │ ";
+        // Mode
+        let mode_name = format!("{:?}", self.mode).to_uppercase();
+        let mode_seg = format!("{} {} ", self.mode_icon(), mode_name);
+        // Tabs
+        let tab_parts: Vec<(String, bool)> = self.tabs.iter().map(|t| {
+            let label = format!(" {} ", t.name);
+            (label, t.active)
         }).collect();
 
-        let line = format!("{}│{}", mode_str, tab_str);
-        let padding = cols.saturating_sub(line.len());
-        print!("{}{}", line, " ".repeat(padding));
+        let mut left = session_seg.clone();
+        left.push_str(sep);
+        left.push_str(&mode_seg);
+        left.push_str(sep);
+        left.push_str("󰓩");
+        for (i, (name, _)) in tab_parts.iter().enumerate() {
+            if i > 0 {
+                left.push_str("│");
+            }
+            left.push_str(name);
+        }
+
+        // === Right side ===
+        let cwd_seg = format!(" 󰉖 {} ", self.format_cwd());
+        let time_seg = format!(" 󰥔 {} ", self.format_time());
+        let right = format!("{}{}{}", sep, cwd_seg, time_seg);
+
+        // === Compose full line ===
+        let left_chars = left.chars().count();
+        let right_chars = right.chars().count();
+        let gap = cols.saturating_sub(left_chars + right_chars);
+        let line = format!("{}{}{}", left, " ".repeat(gap), right);
+
+        // === Style ===
+        let mut text = Text::new(&line).opaque();
+
+        // Session name: emphasis_1 (index 3)
+        let session_chars = session_seg.chars().count();
+        text = text.color_range(3, 0..session_chars);
+
+        // Mode: emphasis_2 (index 4)
+        let mut pos = session_chars + sep.chars().count();
+        let mode_seg_chars = mode_seg.chars().count();
+        text = text.color_range(4, pos..pos + mode_seg_chars);
+        pos += mode_seg_chars;
+
+        // Tab icon + separators: base color
+        pos += sep.chars().count();
+        let tab_icon_chars = "󰓩".chars().count();
+        text = text.color_range(0, pos..pos + tab_icon_chars);
+        pos += tab_icon_chars;
+
+        // Tab names: active = emphasis_0, inactive = no color
+        for (i, (name, active)) in tab_parts.iter().enumerate() {
+            if i > 0 {
+                pos += "│".chars().count();
+            }
+            let name_chars = name.chars().count();
+            if *active {
+                text = text.color_range(0, pos..pos + name_chars);
+            }
+            pos += name_chars;
+        }
+
+        // Right side: CWD and time
+        let right_start = left_chars + gap;
+        let right_sep_chars = sep.chars().count();
+        let cwd_start = right_start + right_sep_chars;
+        let cwd_chars = cwd_seg.chars().count();
+        text = text.color_range(2, cwd_start..cwd_start + cwd_chars);
+
+        let time_start = cwd_start + cwd_chars;
+        let time_chars = time_seg.chars().count();
+        text = text.color_range(3, time_start..time_start + time_chars);
+
+        print_text(text);
     }
 }
