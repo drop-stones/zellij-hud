@@ -19,6 +19,10 @@ struct State {
     tabs: Vec<TabInfo>,
     has_permission: bool,
     hud_is_open: bool,
+    /// HUD: own plugin ID for self-movement across tabs
+    own_plugin_id: Option<u32>,
+    /// HUD: 1-based index of the tab the HUD is currently on
+    active_tab_idx: usize,
 }
 
 impl Default for State {
@@ -29,6 +33,8 @@ impl Default for State {
             tabs: Vec::new(),
             has_permission: false,
             hud_is_open: false,
+            own_plugin_id: None,
+            active_tab_idx: 0,
         }
     }
 }
@@ -60,7 +66,7 @@ impl State {
             .map(|t| (t.display_area_rows, t.display_area_columns))
             .unwrap_or((24, 80));
 
-        let height = 2;
+        let height = 3;
         let y = rows.saturating_sub(height);
 
         FloatingPaneCoordinates::new(
@@ -78,7 +84,10 @@ impl ZellijPlugin for State {
         self.is_hud = configuration.get(CONFIG_IS_HUD).map_or(false, |v| v == "true");
 
         if self.is_hud {
-            // HUD instance: subscribe to mode/tab updates to render and close
+            // HUD instance: get own plugin ID for tab following
+            let ids = get_plugin_ids();
+            self.own_plugin_id = Some(ids.plugin_id);
+
             request_permission(&[
                 PermissionType::ReadApplicationState,
                 PermissionType::ChangeApplicationState,
@@ -137,6 +146,22 @@ impl ZellijPlugin for State {
                 true
             }
             Event::TabUpdate(tabs) => {
+                if self.is_hud {
+                    // Follow active tab if it changed (1-based index like compact-bar)
+                    if let Some(active_tab_index) = tabs.iter().position(|t| t.active) {
+                        let new_idx = active_tab_index + 1;
+                        if self.active_tab_idx != new_idx {
+                            if let Some(id) = self.own_plugin_id {
+                                break_panes_to_tab_with_index(
+                                    &[PaneId::Plugin(id)],
+                                    new_idx.saturating_sub(1),
+                                    false,
+                                );
+                            }
+                            self.active_tab_idx = new_idx;
+                        }
+                    }
+                }
                 self.tabs = tabs;
                 true
             }
@@ -165,6 +190,6 @@ impl ZellijPlugin for State {
 
         let line = format!("{}│{}", mode_str, tab_str);
         let padding = cols.saturating_sub(line.len());
-        println!("{}{}", line, " ".repeat(padding));
+        print!("{}{}", line, " ".repeat(padding));
     }
 }
