@@ -1,6 +1,6 @@
 use zellij_tile::prelude::*;
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -14,6 +14,7 @@ struct HudConfig {
     format_right: String,
     color_session: String,
     color_mode: String,
+    mode_colors: HashMap<InputMode, String>,
     color_tab_active: String,
     color_tab_inactive: String,
     color_cwd: String,
@@ -73,7 +74,35 @@ impl HudConfig {
             if let Ok(n) = v.parse::<i64>() { hud.timezone_offset = n; }
         }
 
+        let mode_map = [
+            ("color_mode_normal",       InputMode::Normal),
+            ("color_mode_locked",       InputMode::Locked),
+            ("color_mode_pane",         InputMode::Pane),
+            ("color_mode_tab",          InputMode::Tab),
+            ("color_mode_resize",       InputMode::Resize),
+            ("color_mode_move",         InputMode::Move),
+            ("color_mode_scroll",       InputMode::Scroll),
+            ("color_mode_session",      InputMode::Session),
+            ("color_mode_search",       InputMode::Search),
+            ("color_mode_rename_tab",   InputMode::RenameTab),
+            ("color_mode_rename_pane",  InputMode::RenamePane),
+            ("color_mode_enter_search", InputMode::EnterSearch),
+            ("color_mode_tmux",         InputMode::Tmux),
+            ("color_mode_prompt",       InputMode::Prompt),
+        ];
+        for (key, mode) in &mode_map {
+            if let Some(v) = config.get(*key) {
+                if let Some(c) = Self::hex_to_fg(v) {
+                    hud.mode_colors.insert(*mode, c);
+                }
+            }
+        }
+
         hud
+    }
+
+    fn color_for_mode(&self, mode: InputMode) -> &str {
+        self.mode_colors.get(&mode).map_or(&self.color_mode, |c| c.as_str())
     }
 
     /// Parse `date +%z` output (e.g. "+0900", "-0500") into hours offset.
@@ -135,6 +164,11 @@ impl Default for HudConfig {
             format_right: "{cwd} | {memory} | {date} | {time}".to_string(),
             color_session: "\x1b[38;2;42;195;222m".to_string(),   // #2ac3de
             color_mode: "\x1b[38;2;140;165;240m".to_string(),     // #8ca5f0
+            mode_colors: HashMap::from([
+                (InputMode::Normal, "\x1b[38;2;158;206;106m".to_string()),  // #9ece6a green
+                (InputMode::Locked, "\x1b[38;2;86;95;137m".to_string()),    // #565f89 dim
+                (InputMode::Resize, "\x1b[38;2;247;118;142m".to_string()),  // #f7768e red
+            ]),
             color_tab_active: "\x1b[38;2;192;202;245m".to_string(), // #c0caf5
             color_tab_inactive: "\x1b[38;2;86;95;137m".to_string(), // #565f89
             color_cwd: "\x1b[38;2;42;195;222m".to_string(),       // #2ac3de
@@ -344,7 +378,7 @@ impl State {
             "{mode}" => {
                 format!(
                     "{}{} {}{reset}{bg}",
-                    c.color_mode,
+                    c.color_for_mode(self.mode),
                     self.mode_icon(),
                     format!("{:?}", self.mode).to_uppercase(),
                 )
