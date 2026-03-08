@@ -139,6 +139,8 @@ impl ZellijPlugin for State {
             self.own_plugin_id = Some(ids.plugin_id);
             self.cwd = ids.initial_cwd;
 
+            // Make HUD non-selectable (prevents mouse hover focus)
+            set_selectable(false);
             // Clear the frame title
             rename_plugin_pane(ids.plugin_id, "");
 
