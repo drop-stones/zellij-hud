@@ -157,6 +157,22 @@ impl State {
             InputMode::Prompt => "󰘥",
         }
     }
+    fn visible_len(s: &str) -> usize {
+        let mut len = 0;
+        let mut in_escape = false;
+        for ch in s.chars() {
+            if ch == '\x1b' {
+                in_escape = true;
+            } else if in_escape {
+                if ch == 'm' {
+                    in_escape = false;
+                }
+            } else {
+                len += 1;
+            }
+        }
+        len
+    }
 }
 
 impl ZellijPlugin for State {
@@ -272,71 +288,49 @@ impl ZellijPlugin for State {
             return;
         }
 
-        // Segment: (text, color_index)
-        // Color indices: 0=base, 3=emphasis_1(cyan), 4=emphasis_2(blue), 5=emphasis_3(magenta)
-        // None = dim/uncolored (inherits default text color)
-        let dim_sep = " │ ";
+        // ANSI color helpers using theme RGB values
+        // dim: #565f89 (comment color from tokyonight)
+        let dim = "\x1b[38;2;86;95;137m";
+        // Colors from tokyonight-night theme
+        let cyan = "\x1b[38;2;42;195;222m";
+        let blue = "\x1b[38;2;140;165;240m";
+        let magenta = "\x1b[38;2;187;154;247m";
+        let base = "\x1b[38;2;192;202;245m";
+        let bg = "\x1b[48;2;26;27;38m";
+        let reset = "\x1b[0m";
 
-        // === Build left segments ===
-        let mut segments: Vec<(String, Option<usize>)> = Vec::new();
+        let sep = format!("{}│{}", dim, reset);
 
-        // Session
-        segments.push((format!(" 󰆍 {} ", self.session_name), Some(3)));
-        segments.push((dim_sep.to_string(), None));
+        // === Left side ===
+        let mut left = format!(
+            "{bg} {cyan}󰆍 {}{reset}{bg} {sep}{bg} {blue}{} {}{reset}{bg} {sep}{bg} ",
+            self.session_name,
+            self.mode_icon(),
+            format!("{:?}", self.mode).to_uppercase(),
+        );
 
-        // Mode
-        let mode_name = format!("{:?}", self.mode).to_uppercase();
-        segments.push((format!("{} {} ", self.mode_icon(), mode_name), Some(4)));
-        segments.push((dim_sep.to_string(), None));
-
-        // Tabs
-        for (i, tab) in self.tabs.iter().enumerate() {
-            if i > 0 {
-                segments.push((" │ ".to_string(), None));
+        // Tabs (no separators, just spacing)
+        for tab in &self.tabs {
+            if tab.active {
+                left.push_str(&format!("{base} {} {reset}{bg}", tab.name));
+            } else {
+                left.push_str(&format!("{dim} {} {reset}{bg}", tab.name));
             }
-            let color = if tab.active { Some(0) } else { Some(5) };
-            segments.push((format!(" {} ", tab.name), color));
         }
 
-        // === Build right segments ===
-        let mut right_segments: Vec<(String, Option<usize>)> = Vec::new();
+        // === Right side ===
+        let right = format!(
+            "{cyan}󰉖 {}{reset}{bg} {sep}{bg} {magenta}󰃭 {}{reset}{bg} {sep}{bg} {blue}󰥔 {} {reset}",
+            self.format_cwd(),
+            self.format_date(),
+            self.format_time(),
+        );
 
-        right_segments.push((format!("󰉖 {} ", self.format_cwd()), Some(3)));
-        right_segments.push((dim_sep.to_string(), None));
-        right_segments.push((format!("󰃭 {} ", self.format_date()), Some(5)));
-        right_segments.push((dim_sep.to_string(), None));
-        right_segments.push((format!("󰥔 {} ", self.format_time()), Some(4)));
+        // Calculate visible widths (strip ANSI for counting)
+        let left_visible = Self::visible_len(&left);
+        let right_visible = Self::visible_len(&right);
+        let gap = cols.saturating_sub(left_visible + right_visible);
 
-        // === Compose line ===
-        let left: String = segments.iter().map(|(s, _)| s.as_str()).collect();
-        let right: String = right_segments.iter().map(|(s, _)| s.as_str()).collect();
-        let left_chars = left.chars().count();
-        let right_chars = right.chars().count();
-        let gap = cols.saturating_sub(left_chars + right_chars);
-        let line = format!("{}{}{}", left, " ".repeat(gap), right);
-
-        // === Apply colors ===
-        let mut text = Text::new(&line).opaque();
-        let mut pos = 0;
-
-        for (s, color) in &segments {
-            let len = s.chars().count();
-            if let Some(idx) = color {
-                text = text.color_range(*idx, pos..pos + len);
-            }
-            pos += len;
-        }
-
-        pos += gap;
-
-        for (s, color) in &right_segments {
-            let len = s.chars().count();
-            if let Some(idx) = color {
-                text = text.color_range(*idx, pos..pos + len);
-            }
-            pos += len;
-        }
-
-        print_text(text);
+        print!("{}{}{}", left, " ".repeat(gap), right);
     }
 }
