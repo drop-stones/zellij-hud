@@ -6,6 +6,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 const CONFIG_IS_HUD: &str = "is_hud";
 const CMD_CONTEXT_TZ: &str = "tz_detect";
+const CMD_CONTEXT_MEM: &str = "mem_usage";
+const MEM_UPDATE_INTERVAL: u32 = 5;
 
 struct HudConfig {
     format_left: String,
@@ -17,6 +19,7 @@ struct HudConfig {
     color_cwd: String,
     color_date: String,
     color_time: String,
+    color_memory: String,
     color_separator: String,
     color_bg: String,
     separator: String,
@@ -54,6 +57,9 @@ impl HudConfig {
         if let Some(v) = config.get("color_time") {
             if let Some(c) = Self::hex_to_fg(v) { hud.color_time = c; }
         }
+        if let Some(v) = config.get("color_memory") {
+            if let Some(c) = Self::hex_to_fg(v) { hud.color_memory = c; }
+        }
         if let Some(v) = config.get("color_separator") {
             if let Some(c) = Self::hex_to_fg(v) { hud.color_separator = c; }
         }
@@ -83,6 +89,23 @@ impl HudConfig {
         Some(sign * hours + if mins > 0 { sign } else { 0 })
     }
 
+    /// Parse `free -b` output into (used_bytes, total_bytes).
+    /// Looks for the "Mem:" line and extracts total (col 1) and used (col 2).
+    fn parse_free(stdout: &[u8]) -> Option<(u64, u64)> {
+        let s = std::str::from_utf8(stdout).ok()?;
+        for line in s.lines() {
+            if line.starts_with("Mem:") {
+                let cols: Vec<&str> = line.split_whitespace().collect();
+                if cols.len() >= 3 {
+                    let total: u64 = cols[1].parse().ok()?;
+                    let used: u64 = cols[2].parse().ok()?;
+                    return Some((used, total));
+                }
+            }
+        }
+        None
+    }
+
     fn hex_to_fg(hex: &str) -> Option<String> {
         let (r, g, b) = Self::parse_hex(hex)?;
         Some(format!("\x1b[38;2;{};{};{}m", r, g, b))
@@ -109,7 +132,7 @@ impl Default for HudConfig {
     fn default() -> Self {
         Self {
             format_left: "{session} | {mode} | {tabs}".to_string(),
-            format_right: "{cwd} | {date} | {time}".to_string(),
+            format_right: "{cwd} | {memory} | {date} | {time}".to_string(),
             color_session: "\x1b[38;2;42;195;222m".to_string(),   // #2ac3de
             color_mode: "\x1b[38;2;140;165;240m".to_string(),     // #8ca5f0
             color_tab_active: "\x1b[38;2;192;202;245m".to_string(), // #c0caf5
@@ -117,6 +140,7 @@ impl Default for HudConfig {
             color_cwd: "\x1b[38;2;42;195;222m".to_string(),       // #2ac3de
             color_date: "\x1b[38;2;187;154;247m".to_string(),     // #bb9af7
             color_time: "\x1b[38;2;140;165;240m".to_string(),     // #8ca5f0
+            color_memory: "\x1b[38;2;158;206;106m".to_string(),    // #9ece6a
             color_separator: "\x1b[38;2;86;95;137m".to_string(),  // #565f89
             color_bg: "\x1b[48;2;26;27;38m".to_string(),          // #1a1b26
             separator: "│".to_string(),
@@ -153,6 +177,10 @@ struct State {
     plugin_config: BTreeMap<String, String>,
     /// Parsed configuration (HUD only)
     hud_config: HudConfig,
+    /// HUD: formatted memory usage string
+    memory_text: String,
+    /// HUD: timer tick counter for throttling memory updates
+    timer_count: u32,
 }
 
 impl Default for State {
@@ -170,6 +198,8 @@ impl Default for State {
             session_name: String::new(),
             plugin_config: BTreeMap::new(),
             hud_config: HudConfig::default(),
+            memory_text: String::new(),
+            timer_count: 0,
         }
     }
 }
@@ -339,6 +369,13 @@ impl State {
             "{time}" => {
                 format!("{}󰥔 {}{reset}{bg}", c.color_time, self.format_time())
             }
+            "{memory}" => {
+                if self.memory_text.is_empty() {
+                    String::new()
+                } else {
+                    format!("{}󰍛 {}{reset}{bg}", c.color_memory, self.memory_text)
+                }
+            }
             _ => String::new(),
         }
     }
@@ -383,12 +420,15 @@ impl ZellijPlugin for State {
             request_permission(&[
                 PermissionType::ReadApplicationState,
                 PermissionType::ChangeApplicationState,
+                PermissionType::MessageAndLaunchOtherPlugins,
+                PermissionType::RunCommands,
             ]);
             subscribe(&[
                 EventType::ModeUpdate,
                 EventType::TabUpdate,
                 EventType::Timer,
                 EventType::PermissionRequestResult,
+                EventType::RunCommandResult,
             ]);
 
             // Start clock timer
@@ -417,7 +457,12 @@ impl ZellijPlugin for State {
             Event::PermissionRequestResult(result) => {
                 if result == PermissionStatus::Granted {
                     self.has_permission = true;
-                    if !self.is_hud {
+                    if self.is_hud {
+                        // Fetch memory usage immediately on startup
+                        let mut ctx = BTreeMap::new();
+                        ctx.insert(CMD_CONTEXT_MEM.to_string(), "1".to_string());
+                        run_command(&["free", "-b"], ctx);
+                    } else {
                         hide_self();
                         // Detect timezone via `date +%z` (requires `date` on host)
                         let mut ctx = BTreeMap::new();
@@ -432,8 +477,13 @@ impl ZellijPlugin for State {
                     if let Some(offset) = HudConfig::parse_date_tz(stdout) {
                         self.plugin_config.insert("timezone".to_string(), offset.to_string());
                     }
+                } else if context.contains_key(CMD_CONTEXT_MEM) {
+                    if let Some((used, total)) = HudConfig::parse_free(stdout) {
+                        let pct = (used as f64 / total as f64) * 100.0;
+                        self.memory_text = format!("{:.0}%", pct);
+                    }
                 }
-                false
+                true
             }
             Event::ModeUpdate(mode_info) => {
                 let new_mode = mode_info.mode;
@@ -480,6 +530,13 @@ impl ZellijPlugin for State {
             Event::Timer(_) => {
                 if self.is_hud {
                     set_timeout(1.0);
+                    self.timer_count += 1;
+                    // Update memory usage every MEM_UPDATE_INTERVAL seconds
+                    if self.timer_count % MEM_UPDATE_INTERVAL == 1 {
+                        let mut ctx = BTreeMap::new();
+                        ctx.insert(CMD_CONTEXT_MEM.to_string(), "1".to_string());
+                        run_command(&["free", "-b"], ctx);
+                    }
                 }
                 true
             }
