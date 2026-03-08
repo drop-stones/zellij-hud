@@ -90,16 +90,45 @@ impl State {
     fn format_time(&self) -> String {
         if let Ok(dur) = SystemTime::now().duration_since(UNIX_EPOCH) {
             let total_secs = dur.as_secs();
-            // UTC time components
-            let secs = total_secs % 60;
             let mins = (total_secs / 60) % 60;
             let hours = (total_secs / 3600) % 24;
-            // Adjust for JST (UTC+9)
             let hours_jst = (hours + 9) % 24;
-            format!("{:02}:{:02}:{:02}", hours_jst, mins, secs)
+            format!("{:02}:{:02}", hours_jst, mins)
         } else {
-            "--:--:--".to_string()
+            "--:--".to_string()
         }
+    }
+
+    fn format_date(&self) -> String {
+        if let Ok(dur) = SystemTime::now().duration_since(UNIX_EPOCH) {
+            let jst_secs = dur.as_secs() + 9 * 3600;
+            let jst_days = (jst_secs / 86400) as i64;
+
+            let (_year, month, day) = Self::days_to_ymd(jst_days);
+            let month_name = match month {
+                1 => "Jan", 2 => "Feb", 3 => "Mar", 4 => "Apr",
+                5 => "May", 6 => "Jun", 7 => "Jul", 8 => "Aug",
+                9 => "Sep", 10 => "Oct", 11 => "Nov", 12 => "Dec",
+                _ => "???",
+            };
+            format!("{} {:02}", month_name, day)
+        } else {
+            "--- --".to_string()
+        }
+    }
+
+    fn days_to_ymd(days_since_epoch: i64) -> (i64, u32, u32) {
+        let z = days_since_epoch + 719468;
+        let era = z.div_euclid(146097);
+        let doe = z.rem_euclid(146097) as u64;
+        let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
+        let y = yoe as i64 + era * 400;
+        let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+        let mp = (5 * doy + 2) / 153;
+        let d = (doy - (153 * mp + 2) / 5 + 1) as u32;
+        let m = if mp < 10 { mp + 3 } else { mp - 9 } as u32;
+        let y = if m <= 2 { y + 1 } else { y };
+        (y, m, d)
     }
 
     fn format_cwd(&self) -> String {
@@ -243,83 +272,70 @@ impl ZellijPlugin for State {
             return;
         }
 
-        // === Left side ===
-        // Session name
-        let session_seg = format!(" 󰆍 {} ", self.session_name);
-        let sep = " │ ";
+        // Segment: (text, color_index)
+        // Color indices: 0=base, 3=emphasis_1(cyan), 4=emphasis_2(blue), 5=emphasis_3(magenta)
+        // None = dim/uncolored (inherits default text color)
+        let dim_sep = " │ ";
+
+        // === Build left segments ===
+        let mut segments: Vec<(String, Option<usize>)> = Vec::new();
+
+        // Session
+        segments.push((format!(" 󰆍 {} ", self.session_name), Some(3)));
+        segments.push((dim_sep.to_string(), None));
+
         // Mode
         let mode_name = format!("{:?}", self.mode).to_uppercase();
-        let mode_seg = format!("{} {} ", self.mode_icon(), mode_name);
-        // Tabs
-        let tab_parts: Vec<(String, bool)> = self.tabs.iter().map(|t| {
-            let label = format!(" {} ", t.name);
-            (label, t.active)
-        }).collect();
+        segments.push((format!("{} {} ", self.mode_icon(), mode_name), Some(4)));
+        segments.push((dim_sep.to_string(), None));
 
-        let mut left = session_seg.clone();
-        left.push_str(sep);
-        left.push_str(&mode_seg);
-        left.push_str(sep);
-        left.push_str("󰓩");
-        for (i, (name, _)) in tab_parts.iter().enumerate() {
+        // Tabs
+        for (i, tab) in self.tabs.iter().enumerate() {
             if i > 0 {
-                left.push_str("│");
+                segments.push((" │ ".to_string(), None));
             }
-            left.push_str(name);
+            let color = if tab.active { Some(0) } else { Some(5) };
+            segments.push((format!(" {} ", tab.name), color));
         }
 
-        // === Right side ===
-        let cwd_seg = format!(" 󰉖 {} ", self.format_cwd());
-        let time_seg = format!(" 󰥔 {} ", self.format_time());
-        let right = format!("{}{}{}", sep, cwd_seg, time_seg);
+        // === Build right segments ===
+        let mut right_segments: Vec<(String, Option<usize>)> = Vec::new();
 
-        // === Compose full line ===
+        right_segments.push((format!("󰉖 {} ", self.format_cwd()), Some(3)));
+        right_segments.push((dim_sep.to_string(), None));
+        right_segments.push((format!("󰃭 {} ", self.format_date()), Some(5)));
+        right_segments.push((dim_sep.to_string(), None));
+        right_segments.push((format!("󰥔 {} ", self.format_time()), Some(4)));
+
+        // === Compose line ===
+        let left: String = segments.iter().map(|(s, _)| s.as_str()).collect();
+        let right: String = right_segments.iter().map(|(s, _)| s.as_str()).collect();
         let left_chars = left.chars().count();
         let right_chars = right.chars().count();
         let gap = cols.saturating_sub(left_chars + right_chars);
         let line = format!("{}{}{}", left, " ".repeat(gap), right);
 
-        // === Style ===
+        // === Apply colors ===
         let mut text = Text::new(&line).opaque();
+        let mut pos = 0;
 
-        // Session name: emphasis_1 (index 3)
-        let session_chars = session_seg.chars().count();
-        text = text.color_range(3, 0..session_chars);
-
-        // Mode: emphasis_2 (index 4)
-        let mut pos = session_chars + sep.chars().count();
-        let mode_seg_chars = mode_seg.chars().count();
-        text = text.color_range(4, pos..pos + mode_seg_chars);
-        pos += mode_seg_chars;
-
-        // Tab icon + separators: base color
-        pos += sep.chars().count();
-        let tab_icon_chars = "󰓩".chars().count();
-        text = text.color_range(0, pos..pos + tab_icon_chars);
-        pos += tab_icon_chars;
-
-        // Tab names: active = emphasis_0, inactive = no color
-        for (i, (name, active)) in tab_parts.iter().enumerate() {
-            if i > 0 {
-                pos += "│".chars().count();
+        for (s, color) in &segments {
+            let len = s.chars().count();
+            if let Some(idx) = color {
+                text = text.color_range(*idx, pos..pos + len);
             }
-            let name_chars = name.chars().count();
-            if *active {
-                text = text.color_range(0, pos..pos + name_chars);
-            }
-            pos += name_chars;
+            pos += len;
         }
 
-        // Right side: CWD and time
-        let right_start = left_chars + gap;
-        let right_sep_chars = sep.chars().count();
-        let cwd_start = right_start + right_sep_chars;
-        let cwd_chars = cwd_seg.chars().count();
-        text = text.color_range(2, cwd_start..cwd_start + cwd_chars);
+        pos += gap;
 
-        let time_start = cwd_start + cwd_chars;
-        let time_chars = time_seg.chars().count();
-        text = text.color_range(3, time_start..time_start + time_chars);
+        for (s, color) in &right_segments {
+            let len = s.chars().count();
+            if let Some(idx) = color {
+                text = text.color_range(*idx, pos..pos + len);
+            }
+            pos += len;
+        }
 
         print_text(text);
     }
