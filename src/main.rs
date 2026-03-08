@@ -63,7 +63,7 @@ impl State {
             .with_plugin_url("zellij:OWN_URL")
             .with_plugin_config(config)
             .with_floating_pane_coordinates(self.hud_coordinates())
-            .new_plugin_instance_should_have_pane_title("hud".to_string());
+            .new_plugin_instance_should_have_pane_title(String::new());
 
         pipe_message_to_plugin(msg);
         self.hud_is_open = true;
