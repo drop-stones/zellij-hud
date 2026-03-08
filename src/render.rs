@@ -2,6 +2,24 @@ use zellij_tile::prelude::InputMode;
 
 use crate::State;
 
+/// Count visible characters in a string, ignoring ANSI escape sequences.
+pub(crate) fn visible_len(s: &str) -> usize {
+    let mut len = 0;
+    let mut in_escape = false;
+    for ch in s.chars() {
+        if ch == '\x1b' {
+            in_escape = true;
+        } else if in_escape {
+            if ch == 'm' {
+                in_escape = false;
+            }
+        } else {
+            len += 1;
+        }
+    }
+    len
+}
+
 impl State {
     pub(crate) fn render_segment(&self, placeholder: &str) -> String {
         let c = &self.hud_config;
@@ -72,23 +90,6 @@ impl State {
         }
 
         out
-    }
-
-    pub(crate) fn visible_len(s: &str) -> usize {
-        let mut len = 0;
-        let mut in_escape = false;
-        for ch in s.chars() {
-            if ch == '\x1b' {
-                in_escape = true;
-            } else if in_escape {
-                if ch == 'm' {
-                    in_escape = false;
-                }
-            } else {
-                len += 1;
-            }
-        }
-        len
     }
 
     pub(crate) fn mode_icon(&self) -> &str {
