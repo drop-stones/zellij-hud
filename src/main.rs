@@ -5,6 +5,7 @@ use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 const CONFIG_IS_HUD: &str = "is_hud";
+const CMD_CONTEXT_TZ: &str = "tz_detect";
 
 struct HudConfig {
     format_left: String,
@@ -67,6 +68,19 @@ impl HudConfig {
         }
 
         hud
+    }
+
+    /// Parse `date +%z` output (e.g. "+0900", "-0500") into hours offset.
+    fn parse_date_tz(stdout: &[u8]) -> Option<i64> {
+        let s = std::str::from_utf8(stdout).ok()?.trim();
+        if s.len() < 5 {
+            return None;
+        }
+        let sign: i64 = if s.starts_with('-') { -1 } else { 1 };
+        let digits = &s[1..];
+        let hours: i64 = digits[..2].parse().ok()?;
+        let mins: i64 = digits[2..4].parse().ok()?;
+        Some(sign * hours + if mins > 0 { sign } else { 0 })
     }
 
     fn hex_to_fg(hex: &str) -> Option<String> {
@@ -387,11 +401,13 @@ impl ZellijPlugin for State {
                 PermissionType::ReadApplicationState,
                 PermissionType::ChangeApplicationState,
                 PermissionType::MessageAndLaunchOtherPlugins,
+                PermissionType::RunCommands,
             ]);
             subscribe(&[
                 EventType::ModeUpdate,
                 EventType::TabUpdate,
                 EventType::PermissionRequestResult,
+                EventType::RunCommandResult,
             ]);
         }
     }
@@ -403,9 +419,21 @@ impl ZellijPlugin for State {
                     self.has_permission = true;
                     if !self.is_hud {
                         hide_self();
+                        // Detect timezone via `date +%z` (requires `date` on host)
+                        let mut ctx = BTreeMap::new();
+                        ctx.insert(CMD_CONTEXT_TZ.to_string(), "1".to_string());
+                        run_command(&["date", "+%z"], ctx);
                     }
                 }
                 true
+            }
+            Event::RunCommandResult(_exit_code, ref stdout, _stderr, ref context) => {
+                if context.contains_key(CMD_CONTEXT_TZ) {
+                    if let Some(offset) = HudConfig::parse_date_tz(stdout) {
+                        self.plugin_config.insert("timezone".to_string(), offset.to_string());
+                    }
+                }
+                false
             }
             Event::ModeUpdate(mode_info) => {
                 let new_mode = mode_info.mode;
