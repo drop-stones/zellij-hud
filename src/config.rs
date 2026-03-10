@@ -16,6 +16,10 @@ pub(crate) struct HudConfig {
     pub(crate) color_memory: String,
     pub(crate) color_separator: String,
     pub(crate) color_bg: String,
+    pub(crate) color_tooltip_key: String,
+    pub(crate) color_tooltip_arrow: String,
+    pub(crate) color_tooltip_action: String,
+    pub(crate) color_tooltip_mode: String,
     pub(crate) separator: String,
     pub(crate) timezone_offset: i64,
 }
@@ -78,6 +82,26 @@ impl HudConfig {
         if let Some(v) = config.get("color_bg") {
             if let Some(c) = Self::hex_to_bg(v) {
                 hud.color_bg = c;
+            }
+        }
+        if let Some(v) = config.get("color_tooltip_key") {
+            if let Some(c) = Self::hex_to_fg(v) {
+                hud.color_tooltip_key = c;
+            }
+        }
+        if let Some(v) = config.get("color_tooltip_arrow") {
+            if let Some(c) = Self::hex_to_fg(v) {
+                hud.color_tooltip_arrow = c;
+            }
+        }
+        if let Some(v) = config.get("color_tooltip_action") {
+            if let Some(c) = Self::hex_to_fg(v) {
+                hud.color_tooltip_action = c;
+            }
+        }
+        if let Some(v) = config.get("color_tooltip_mode") {
+            if let Some(c) = Self::hex_to_fg(v) {
+                hud.color_tooltip_mode = c;
             }
         }
         if let Some(v) = config.get("separator") {
@@ -164,6 +188,10 @@ impl Default for HudConfig {
             color_memory: "\x1b[38;2;158;206;106m".to_string(),     // #9ece6a
             color_separator: "\x1b[38;2;86;95;137m".to_string(),    // #565f89
             color_bg: "\x1b[48;2;26;27;38m".to_string(),            // #1a1b26
+            color_tooltip_key: "\x1b[38;2;42;195;222m".to_string(),     // #2ac3de cyan
+            color_tooltip_arrow: "\x1b[38;2;86;95;137m".to_string(),    // #565f89 dim
+            color_tooltip_action: "\x1b[38;2;187;154;247m".to_string(), // #bb9af7 purple
+            color_tooltip_mode: "\x1b[38;2;122;162;247m".to_string(),   // #7aa2f7 blue
             separator: "│".to_string(),
             timezone_offset: 0,
         }
