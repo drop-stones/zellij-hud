@@ -331,17 +331,13 @@ impl ZellijPlugin for State {
     fn render(&mut self, rows: usize, cols: usize) {
         match self.role {
             Role::Hud => {
-                let bg = &self.hud_config.color_bg;
-                let reset = "\x1b[0m";
-
                 let left = format!(
-                    "{bg} {}{reset}",
+                    " {}",
                     self.render_format(&self.hud_config.format_left.clone())
                 );
                 let right = format!(
-                    "{}{} {reset}",
+                    "{} ",
                     self.render_format(&self.hud_config.format_right.clone()),
-                    ""
                 );
 
                 let left_visible = visible_len(&left);

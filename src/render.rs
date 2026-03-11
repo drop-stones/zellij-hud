@@ -23,16 +23,15 @@ pub(crate) fn visible_len(s: &str) -> usize {
 impl State {
     pub(crate) fn render_segment(&self, placeholder: &str) -> String {
         let c = &self.hud_config;
-        let bg = &c.color_bg;
         let reset = "\x1b[0m";
 
         match placeholder {
             "{session}" => {
-                format!("{}󰆍 {}{reset}{bg}", c.color_session, self.session_name)
+                format!("{}󰆍 {}{reset}", c.color_session, self.session_name)
             }
             "{mode}" => {
                 format!(
-                    "{}{} {}{reset}{bg}",
+                    "{}{} {}{reset}",
                     c.color_for_mode(self.mode),
                     self.mode_icon(),
                     format!("{:?}", self.mode).to_uppercase(),
@@ -42,10 +41,10 @@ impl State {
                 let mut out = String::new();
                 for tab in &self.tabs {
                     if tab.active {
-                        out.push_str(&format!("{} {} {reset}{bg}", c.color_tab_active, tab.name));
+                        out.push_str(&format!("{} {} {reset}", c.color_tab_active, tab.name));
                     } else {
                         out.push_str(&format!(
-                            "{} {} {reset}{bg}",
+                            "{} {} {reset}",
                             c.color_tab_inactive, tab.name
                         ));
                     }
@@ -53,19 +52,19 @@ impl State {
                 out
             }
             "{cwd}" => {
-                format!("{}󰉖 {}{reset}{bg}", c.color_cwd, self.format_cwd())
+                format!("{}󰉖 {}{reset}", c.color_cwd, self.format_cwd())
             }
             "{date}" => {
-                format!("{}󰃭 {}{reset}{bg}", c.color_date, self.format_date())
+                format!("{}󰃭 {}{reset}", c.color_date, self.format_date())
             }
             "{time}" => {
-                format!("{}󰥔 {}{reset}{bg}", c.color_time, self.format_time())
+                format!("{}󰥔 {}{reset}", c.color_time, self.format_time())
             }
             "{memory}" => {
                 if self.memory_text.is_empty() {
                     String::new()
                 } else {
-                    format!("{}󰍛 {}{reset}{bg}", c.color_memory, self.memory_text)
+                    format!("{}󰍛 {}{reset}", c.color_memory, self.memory_text)
                 }
             }
             _ => String::new(),
@@ -74,7 +73,6 @@ impl State {
 
     pub(crate) fn render_format(&self, format_str: &str) -> String {
         let c = &self.hud_config;
-        let bg = &c.color_bg;
         let reset = "\x1b[0m";
         let sep = format!("{}{}{reset}", c.color_separator, c.separator);
 
@@ -85,7 +83,7 @@ impl State {
             let trimmed = part.trim();
             out.push_str(&self.render_segment(trimmed));
             if i < parts.len() - 1 {
-                out.push_str(&format!(" {sep}{bg} "));
+                out.push_str(&format!(" {sep} "));
             }
         }
 

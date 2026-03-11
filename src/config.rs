@@ -170,7 +170,6 @@ pub(crate) struct HudConfig {
     pub(crate) color_time: String,
     pub(crate) color_memory: String,
     pub(crate) color_separator: String,
-    pub(crate) color_bg: String,
     pub(crate) color_tooltip_key: String,
     pub(crate) color_tooltip_arrow: String,
     pub(crate) color_tooltip_action: String,
@@ -196,7 +195,6 @@ impl HudConfig {
 
         // 3. Derive all ANSI defaults from palette
         let fg = |hex: &str| Self::hex_to_fg(hex).unwrap_or_default();
-        let bg = |hex: &str| Self::hex_to_bg(hex).unwrap_or_default();
 
         let mode_colors = HashMap::from([
             (InputMode::Normal, fg(&palette.green)),
@@ -230,7 +228,6 @@ impl HudConfig {
             color_time: fg(&palette.blue),
             color_memory: fg(&palette.green),
             color_separator: fg(&palette.dim),
-            color_bg: bg(&palette.bg),
             color_tooltip_key: fg(&palette.cyan),
             color_tooltip_arrow: fg(&palette.dim),
             color_tooltip_action: fg(&palette.magenta),
@@ -266,11 +263,6 @@ impl HudConfig {
         color_fg!("color_tooltip_arrow", hud.color_tooltip_arrow);
         color_fg!("color_tooltip_action", hud.color_tooltip_action);
         color_fg!("color_tooltip_mode", hud.color_tooltip_mode);
-        if let Some(v) = config.get("color_bg") {
-            if let Some(c) = Self::resolve_bg(v, &palette) {
-                hud.color_bg = c;
-            }
-        }
 
         // color_mode_* overrides
         let mode_map = [
@@ -340,20 +332,9 @@ impl HudConfig {
         Self::hex_to_fg(hex)
     }
 
-    /// Resolve a value as palette name or hex, then convert to bg ANSI.
-    fn resolve_bg(value: &str, palette: &ThemePalette) -> Option<String> {
-        let hex = palette.resolve(value).unwrap_or(value);
-        Self::hex_to_bg(hex)
-    }
-
     pub(crate) fn hex_to_fg(hex: &str) -> Option<String> {
         let (r, g, b) = Self::parse_hex(hex)?;
         Some(format!("\x1b[38;2;{};{};{}m", r, g, b))
-    }
-
-    pub(crate) fn hex_to_bg(hex: &str) -> Option<String> {
-        let (r, g, b) = Self::parse_hex(hex)?;
-        Some(format!("\x1b[48;2;{};{};{}m", r, g, b))
     }
 
     fn parse_hex(hex: &str) -> Option<(u8, u8, u8)> {
