@@ -13,7 +13,7 @@ use std::collections::BTreeMap;
 use std::path::PathBuf;
 
 use commands::{CMD_CONTEXT_MEM, CMD_CONTEXT_TZ, MEM_UPDATE_INTERVAL};
-use config::HudConfig;
+use config::{BaseMode, HudConfig};
 use render::visible_len;
 
 pub(crate) const CONFIG_IS_HUD: &str = "is_hud";
@@ -64,6 +64,12 @@ pub(crate) struct State {
     pub(crate) plugin_config: BTreeMap<String, String>,
     /// Parsed configuration
     pub(crate) hud_config: HudConfig,
+    /// Whether the status bar is enabled
+    pub(crate) enable_status_bar: bool,
+    /// Whether the tooltip is enabled
+    pub(crate) enable_tooltip: bool,
+    /// Base mode config setting (override for ModeInfo::base_mode)
+    pub(crate) base_mode_config: BaseMode,
     /// Formatted memory usage string
     pub(crate) memory_text: String,
     /// Timer tick counter for throttling memory updates
@@ -86,21 +92,42 @@ impl Default for State {
             session_name: String::new(),
             plugin_config: BTreeMap::new(),
             hud_config: HudConfig::default(),
+            enable_status_bar: true,
+            enable_tooltip: true,
+            base_mode_config: BaseMode::Auto,
             memory_text: String::new(),
             timer_count: 0,
         }
     }
 }
 
-/// Modes where the tooltip should not be shown (text input modes).
-fn is_tooltip_hidden_mode(mode: InputMode) -> bool {
-    matches!(
-        mode,
-        InputMode::Locked
-            | InputMode::RenamePane
-            | InputMode::RenameTab
-            | InputMode::EnterSearch
-    )
+impl State {
+    /// Resolve the base mode from ModeInfo or config override.
+    fn resolve_base_mode(&self) -> InputMode {
+        // Explicit config override takes priority
+        let config_base = match self.role {
+            Role::Daemon => self.base_mode_config,
+            Role::Hud | Role::Tooltip => self.hud_config.base_mode,
+        };
+        match config_base {
+            BaseMode::Locked => InputMode::Locked,
+            BaseMode::Normal => InputMode::Normal,
+            BaseMode::Auto => self
+                .mode_info
+                .as_ref()
+                .and_then(|mi| mi.base_mode)
+                .unwrap_or(InputMode::Normal),
+        }
+    }
+}
+
+/// Modes where the tooltip should not be shown (base mode + text input modes).
+fn is_tooltip_hidden_mode(mode: InputMode, base_mode: InputMode) -> bool {
+    mode == base_mode
+        || matches!(
+            mode,
+            InputMode::RenamePane | InputMode::RenameTab | InputMode::EnterSearch
+        )
 }
 
 register_plugin!(State);
@@ -149,6 +176,15 @@ impl ZellijPlugin for State {
                 }
             }
             Role::Daemon => {
+                self.enable_status_bar =
+                    configuration.get("enable_status_bar").map_or(true, |v| v != "false");
+                self.enable_tooltip =
+                    configuration.get("enable_tooltip").map_or(true, |v| v != "false");
+                self.base_mode_config = match configuration.get("base_mode").map(|s| s.as_str()) {
+                    Some("locked") => BaseMode::Locked,
+                    Some("normal") => BaseMode::Normal,
+                    _ => BaseMode::Auto,
+                };
                 self.plugin_config = configuration;
 
                 request_permission(&[
@@ -212,15 +248,18 @@ impl ZellijPlugin for State {
                 self.mode = new_mode;
                 self.mode_info = Some(mode_info);
 
+                // Resolve base mode on first ModeUpdate (needs keybindings)
+                let base = self.resolve_base_mode();
+
                 match self.role {
                     Role::Hud => {
-                        if new_mode == InputMode::Locked {
+                        if new_mode == base {
                             close_self();
                             return false;
                         }
                     }
                     Role::Tooltip => {
-                        if is_tooltip_hidden_mode(new_mode) {
+                        if is_tooltip_hidden_mode(new_mode, base) {
                             close_self();
                             return false;
                         }
@@ -229,16 +268,17 @@ impl ZellijPlugin for State {
                     }
                     Role::Daemon => {
                         if self.has_permission {
-                            if new_mode != InputMode::Locked {
-                                if !self.hud_is_open {
+                            if new_mode != base {
+                                if self.enable_status_bar && !self.hud_is_open {
                                     self.spawn_hud();
                                 }
-                                if !is_tooltip_hidden_mode(new_mode)
+                                if self.enable_tooltip
+                                    && !is_tooltip_hidden_mode(new_mode, base)
                                     && !self.tooltip_is_open
                                 {
                                     self.spawn_tooltip();
                                 }
-                                if is_tooltip_hidden_mode(new_mode) {
+                                if is_tooltip_hidden_mode(new_mode, base) {
                                     self.tooltip_is_open = false;
                                 }
                             } else {

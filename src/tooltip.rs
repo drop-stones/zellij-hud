@@ -114,7 +114,11 @@ impl State {
             return;
         }
 
-        let coords = tooltip_coordinates(&ma, &self.tabs);
+        let coords = tooltip_coordinates(
+            &ma,
+            &self.tabs,
+            self.hud_config.enable_status_bar,
+        );
         change_floating_panes_coordinates(vec![(
             PaneId::Plugin(plugin_id),
             coords,
@@ -185,6 +189,7 @@ fn tooltip_dimensions(ma: &ModeActions) -> (usize, usize) {
 fn tooltip_coordinates(
     ma: &ModeActions,
     tabs: &[TabInfo],
+    status_bar_enabled: bool,
 ) -> FloatingPaneCoordinates {
     let (rows, cols) = tabs
         .iter()
@@ -193,7 +198,7 @@ fn tooltip_coordinates(
         .unwrap_or((24, 80));
 
     let (height, width) = tooltip_dimensions(ma);
-    let hud_height = 3;
+    let hud_height = if status_bar_enabled { 3 } else { 0 };
     let w = width.min(cols);
     let h = height.min(rows.saturating_sub(hud_height));
     let x = cols.saturating_sub(w);

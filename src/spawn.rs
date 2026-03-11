@@ -74,7 +74,7 @@ impl State {
     ) -> FloatingPaneCoordinates {
         let (rows, cols) = self.display_area();
 
-        let hud_height = 3;
+        let hud_height = if self.enable_status_bar { 3 } else { 0 };
         let width = tt_cols.min(cols);
         let height = tt_rows.min(rows.saturating_sub(hud_height));
         let x = cols.saturating_sub(width);
