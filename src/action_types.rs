@@ -92,7 +92,7 @@ impl ActionType {
     pub(crate) fn icon(&self) -> &str {
         match self {
             ActionType::SwitchToMode(m) => match m {
-                InputMode::Normal => "󰰓",
+                InputMode::Normal => "󰍀",
                 InputMode::Locked => "󰌾",
                 InputMode::Pane => "󰘖",
                 InputMode::Tab => "󰓩",

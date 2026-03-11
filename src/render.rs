@@ -94,7 +94,7 @@ impl State {
 
     pub(crate) fn mode_icon(&self) -> &str {
         match self.mode {
-            InputMode::Normal => "󰰓",
+            InputMode::Normal => "󰍀",
             InputMode::Locked => "󰌾",
             InputMode::Pane => "󰘖",
             InputMode::Tab => "󰓩",
