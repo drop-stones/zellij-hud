@@ -1,6 +1,8 @@
 use zellij_tile::prelude::actions::Action;
 use zellij_tile::prelude::*;
 
+use crate::config::IconColors;
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub(crate) enum ActionType {
     MoveFocus,
@@ -128,50 +130,35 @@ impl ActionType {
         }
     }
 
-    /// ANSI color escape for the icon (tokyonight defaults).
-    pub(crate) fn icon_color(&self) -> &str {
+    /// ANSI color escape for the icon, derived from the theme palette.
+    pub(crate) fn icon_color<'a>(&self, colors: &'a IconColors) -> &'a str {
         match self {
-            // Mode switch: blue #7aa2f7
-            ActionType::SwitchToMode(_) => "\x1b[38;2;122;162;247m",
-            // Navigation/move: cyan #2ac3de
-            ActionType::MoveFocus | ActionType::MovePaneWithDirection => "\x1b[38;2;42;195;222m",
-            ActionType::GoToAdjacentTab | ActionType::ToggleTab => "\x1b[38;2;42;195;222m",
-            // Resize: orange #ff9e64
+            ActionType::SwitchToMode(_) => &colors.mode_switch,
+            ActionType::MoveFocus | ActionType::MovePaneWithDirection => &colors.navigation,
+            ActionType::GoToAdjacentTab | ActionType::ToggleTab => &colors.navigation,
             ActionType::ResizeIncrease | ActionType::ResizeDecrease | ActionType::ResizeAny => {
-                "\x1b[38;2;255;158;100m"
+                &colors.resize
             }
-            // Create/new: green #9ece6a
             ActionType::NewPaneDown
             | ActionType::NewPaneRight
             | ActionType::NewPaneWithoutDirection
             | ActionType::NewStackedPane
-            | ActionType::NewTab => "\x1b[38;2;158;206;106m",
-            // Close/quit/detach: red #f7768e
-            ActionType::CloseFocus | ActionType::CloseTab | ActionType::Quit => {
-                "\x1b[38;2;247;118;142m"
-            }
-            ActionType::Detach => "\x1b[38;2;247;118;142m",
-            // Toggle: yellow #e0af68
+            | ActionType::NewTab => &colors.create,
+            ActionType::CloseFocus | ActionType::CloseTab | ActionType::Quit => &colors.close,
+            ActionType::Detach => &colors.close,
             ActionType::ToggleFocusFullscreen
             | ActionType::ToggleFloatingPanes
             | ActionType::TogglePaneEmbedOrFloating
-            | ActionType::ToggleActiveSyncTab => "\x1b[38;2;224;175;104m",
-            // Break pane: orange #ff9e64
-            ActionType::BreakPane | ActionType::BreakPaneLeftOrRight => {
-                "\x1b[38;2;255;158;100m"
-            }
-            // Scroll: cyan #2ac3de
+            | ActionType::ToggleActiveSyncTab => &colors.toggle,
+            ActionType::BreakPane | ActionType::BreakPaneLeftOrRight => &colors.resize,
             ActionType::Scroll | ActionType::PageScroll | ActionType::HalfPageScroll => {
-                "\x1b[38;2;42;195;222m"
+                &colors.navigation
             }
-            // Search/edit: purple #bb9af7
-            ActionType::Search | ActionType::EditScrollback => "\x1b[38;2;187;154;247m",
-            // Session/config/plugin: green #9ece6a
+            ActionType::Search | ActionType::EditScrollback => &colors.search,
             ActionType::SessionManager | ActionType::Configuration | ActionType::PluginManager => {
-                "\x1b[38;2;158;206;106m"
+                &colors.create
             }
-            // Fallback: dim #565f89
-            ActionType::Other(_) => "\x1b[38;2;86;95;137m",
+            ActionType::Other(_) => &colors.dim,
         }
     }
 

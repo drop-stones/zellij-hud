@@ -57,7 +57,7 @@ impl State {
             // Mode switch icon uses per-mode color from status bar
             let icon_color = match &action.action_type {
                 ActionType::SwitchToMode(m) => c.color_for_mode(*m),
-                _ => action.action_type.icon_color(),
+                _ => action.action_type.icon_color(&c.icon_colors),
             };
 
             let line = format!(
