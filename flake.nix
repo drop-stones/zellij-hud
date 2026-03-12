@@ -45,11 +45,13 @@
             version = "0.1.0";
             src = ./.;
             cargoLock.lockFile = ./Cargo.lock;
-            CARGO_BUILD_TARGET = "wasm32-wasip1";
             doCheck = false;
+            buildPhase = ''
+              cargo build --target wasm32-wasip1 --release
+            '';
             installPhase = ''
               mkdir -p $out/bin
-              cp target/wasm32-wasip1/release/zellij_hud.wasm $out/bin/
+              cp target/wasm32-wasip1/release/zellij-hud.wasm $out/bin/
             '';
           };
         }
