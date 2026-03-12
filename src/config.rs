@@ -13,10 +13,9 @@ pub(crate) enum BaseMode {
     Normal,
 }
 
-/// 10-color palette used to derive all UI colors.
+/// 9-color palette used to derive all UI colors.
 pub(crate) struct ThemePalette {
     pub(crate) fg: String,
-    pub(crate) bg: String,
     pub(crate) dim: String,
     pub(crate) red: String,
     pub(crate) green: String,
@@ -33,7 +32,6 @@ impl ThemePalette {
         match name {
             "catppuccin-mocha" => Self {
                 fg: "#cdd6f4".into(),
-                bg: "#1e1e2e".into(),
                 dim: "#585b70".into(),
                 red: "#f38ba8".into(),
                 green: "#a6e3a1".into(),
@@ -45,7 +43,6 @@ impl ThemePalette {
             },
             "nord" => Self {
                 fg: "#eceff4".into(),
-                bg: "#2e3440".into(),
                 dim: "#4c566a".into(),
                 red: "#bf616a".into(),
                 green: "#a3be8c".into(),
@@ -57,7 +54,6 @@ impl ThemePalette {
             },
             "gruvbox-dark" => Self {
                 fg: "#ebdbb2".into(),
-                bg: "#282828".into(),
                 dim: "#665c54".into(),
                 red: "#fb4934".into(),
                 green: "#b8bb26".into(),
@@ -82,7 +78,6 @@ impl ThemePalette {
             };
         }
         override_field!("palette_fg", self.fg);
-        override_field!("palette_bg", self.bg);
         override_field!("palette_dim", self.dim);
         override_field!("palette_red", self.red);
         override_field!("palette_green", self.green);
@@ -99,7 +94,6 @@ impl ThemePalette {
     pub(crate) fn resolve(&self, name: &str) -> Option<&str> {
         match name {
             "fg" => Some(&self.fg),
-            "bg" => Some(&self.bg),
             "dim" => Some(&self.dim),
             "red" => Some(&self.red),
             "green" => Some(&self.green),
@@ -117,7 +111,6 @@ impl Default for ThemePalette {
     fn default() -> Self {
         Self {
             fg: "#c0caf5".into(),
-            bg: "#1a1b26".into(),
             dim: "#565f89".into(),
             red: "#f7768e".into(),
             green: "#9ece6a".into(),
