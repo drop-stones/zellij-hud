@@ -87,6 +87,17 @@ xdg.configFile."zellij/config.kdl".text = ''
 
 > **Note:** Load via `load_plugins` or `zellij plugin -- file:/path/to/zellij-hud.wasm`. Loading via layout may cause issues.
 
+## Permissions
+
+On first load, zellij will prompt you to grant the following permissions:
+
+| Permission | Reason |
+|---|---|
+| ReadApplicationState | Subscribe to mode changes and tab updates |
+| ChangeApplicationState | Manage floating panes (spawn, close, resize, move across tabs) |
+| MessageAndLaunchOtherPlugins | Spawn HUD and Tooltip pane instances |
+| RunCommands | Run `date` (timezone detection) and `free` (memory usage) |
+
 ## Configuration
 
 All settings are optional. Place them inside the plugin block:
