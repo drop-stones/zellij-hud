@@ -90,6 +90,11 @@ See the [wiki](https://github.com/drop-stones/zellij-hud/wiki) for detailed docu
 - [Themes](https://github.com/drop-stones/zellij-hud/wiki/Themes) — theme presets and customization
 - [Architecture](https://github.com/drop-stones/zellij-hud/wiki/Architecture) — plugin internals
 
+## Acknowledgements
+
+- [zellij compact-bar](https://github.com/zellij-org/zellij/tree/main/zellij-utils/assets/plugins/compact-bar) — reference implementation for status bar rendering as a zellij plugin
+- [which-key.nvim](https://github.com/folke/which-key.nvim) — inspiration for the which-key tooltip appearance
+
 ## License
 
 MIT
