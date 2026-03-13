@@ -1,4 +1,4 @@
-# zellij-hud
+# 🪟 zellij-hud
 
 On-demand floating status bar and which-key tooltip for [zellij](https://zellij.dev/).
 
