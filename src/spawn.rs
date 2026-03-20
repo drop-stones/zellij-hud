@@ -1,15 +1,21 @@
 use zellij_tile::prelude::*;
 
 use crate::tooltip::tooltip_size;
-use crate::{State, CONFIG_IS_HUD, CONFIG_IS_TOOLTIP};
+use crate::{State, CONFIG_IS_HUD, CONFIG_IS_TOOLTIP, CONFIG_SPAWNED_FOR_CLIENT};
 
 impl State {
     pub(crate) fn spawn_hud(&mut self) {
         if self.hud_is_open {
             return;
         }
+        let initial_tab = self.tabs.iter().position(|t| t.active).map(|i| i + 1).unwrap_or(1);
         let mut config = self.plugin_config.clone();
         config.insert(CONFIG_IS_HUD.to_string(), "true".to_string());
+        config.insert(
+            CONFIG_SPAWNED_FOR_CLIENT.to_string(),
+            self.own_client_id.to_string(),
+        );
+        config.insert("initial_tab".to_string(), initial_tab.to_string());
 
         let msg = MessageToPlugin::new("spawn_hud")
             .with_plugin_url("zellij:OWN_URL")
@@ -21,23 +27,29 @@ impl State {
         self.hud_is_open = true;
     }
 
-    /// Spawn a tooltip pane sized for the current mode.
+    /// Spawn a tooltip pane sized for the given active mode.
     /// The tooltip will resize itself dynamically on mode changes.
-    pub(crate) fn spawn_tooltip(&mut self) {
+    pub(crate) fn spawn_tooltip(&mut self, active_mode: InputMode) {
         if self.tooltip_is_open {
             return;
         }
 
         let (tt_rows, tt_cols) = match &self.mode_info {
-            Some(mi) => tooltip_size(mi),
+            Some(mi) => tooltip_size(mi, active_mode),
             None => return,
         };
         if tt_rows == 0 || tt_cols == 0 {
             return;
         }
 
+        let initial_tab = self.tabs.iter().position(|t| t.active).map(|i| i + 1).unwrap_or(1);
         let mut config = self.plugin_config.clone();
         config.insert(CONFIG_IS_TOOLTIP.to_string(), "true".to_string());
+        config.insert(
+            CONFIG_SPAWNED_FOR_CLIENT.to_string(),
+            self.own_client_id.to_string(),
+        );
+        config.insert("initial_tab".to_string(), initial_tab.to_string());
 
         let msg = MessageToPlugin::new("spawn_tooltip")
             .with_plugin_url("zellij:OWN_URL")
@@ -49,6 +61,23 @@ impl State {
 
         pipe_message_to_plugin(msg);
         self.tooltip_is_open = true;
+    }
+
+    /// Send a targeted close signal for HUD instances spawned by this client.
+    /// The payload carries own_client_id so only the matching HUD closes.
+    pub(crate) fn close_hud_via_pipe(&self) {
+        pipe_message_to_plugin(
+            MessageToPlugin::new("close_hud")
+                .with_payload(self.own_client_id.to_string()),
+        );
+    }
+
+    /// Send a targeted close signal for Tooltip instances spawned by this client.
+    pub(crate) fn close_tooltip_via_pipe(&self) {
+        pipe_message_to_plugin(
+            MessageToPlugin::new("close_tooltip")
+                .with_payload(self.own_client_id.to_string()),
+        );
     }
 
     pub(crate) fn hud_coordinates(&self) -> FloatingPaneCoordinates {

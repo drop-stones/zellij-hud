@@ -109,6 +109,10 @@ impl State {
                 _ => return,
             };
 
+        if self.tabs.is_empty() {
+            return;
+        }
+
         let ma = get_actions_for_mode(mode_info, self.mode);
         if ma.actions.is_empty() && ma.common.is_empty() {
             return;
@@ -139,8 +143,8 @@ impl State {
 }
 
 /// Calculate tooltip pane size for the initial spawn.
-pub(crate) fn tooltip_size(mode_info: &ModeInfo) -> (usize, usize) {
-    let ma = get_actions_for_mode(mode_info, mode_info.mode);
+pub(crate) fn tooltip_size(mode_info: &ModeInfo, mode: InputMode) -> (usize, usize) {
+    let ma = get_actions_for_mode(mode_info, mode);
     if ma.actions.is_empty() && ma.common.is_empty() {
         return (0, 0);
     }
