@@ -121,4 +121,18 @@ Count incoming `SwitchToMode` transitions: the mode other modes switch back to m
 - [ ] Theme file splitting: split presets into `src/themes/tokyonight.rs` etc.
 - [ ] Frame invisibility: find a way to hide floating pane border
 - [ ] compact-bar replacement: once stable, disable built-in compact-bar
-- [ ] Theme-aware colors: use `mode_info.style.colors` for dynamic color mapping
+- [x] Theme-aware colors: use `mode_info.style.colors` for dynamic color mapping
+
+## Upstream proposals (zellij)
+
+### `pipe_message_to_plugin` spawn target tab
+
+`pipe_message_to_plugin` with `zellij:OWN_URL` always places the new pane on the **first connected client's active tab** (`cli_client_id = None` in the internal flow). This causes a brief flash on wrong tabs in multi-client scenarios, because the plugin must `break_panes_to_tab_with_index` after spawn to move it.
+
+**Proposal**: Add a target tab field to `MessageToPlugin` (e.g. `new_plugin_instance_should_open_in_tab(tab_index)`) so plugins can specify the destination tab at spawn time, avoiding the post-spawn move and the flash.
+
+### Per-pane borderless floating panes
+
+Floating panes always have a 1-cell border on each side, forcing a minimum height of 3 rows (1 content + 2 border). For a single-line status bar (HUD), this wastes 2 rows. `toggle_pane_frames()` is global only and affects all panes.
+
+**Proposal**: Add a per-pane API to control border visibility for floating panes (e.g. `FloatingPaneCoordinates::borderless(true)` or a `set_pane_borderless(pane_id)` function).
