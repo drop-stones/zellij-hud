@@ -132,6 +132,7 @@ pub(crate) struct IconColors {
     pub(crate) toggle: String,
     pub(crate) search: String,
     pub(crate) mode_switch: String,
+    pub(crate) plugin: String,
     pub(crate) dim: String,
 }
 
@@ -145,6 +146,7 @@ impl IconColors {
             toggle: HudConfig::hex_to_fg(&p.yellow).unwrap_or_default(),
             search: HudConfig::hex_to_fg(&p.magenta).unwrap_or_default(),
             mode_switch: HudConfig::hex_to_fg(&p.blue).unwrap_or_default(),
+            plugin: HudConfig::hex_to_fg(&p.fg).unwrap_or_default(),
             dim: HudConfig::hex_to_fg(&p.dim).unwrap_or_default(),
         }
     }

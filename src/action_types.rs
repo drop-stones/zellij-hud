@@ -21,6 +21,7 @@ pub(crate) enum ActionType {
     SessionManager,
     Configuration,
     PluginManager,
+    LaunchPlugin(String),
     SwitchToMode(InputMode),
     TogglePaneEmbedOrFloating,
     ToggleFocusFullscreen,
@@ -58,6 +59,7 @@ impl ActionType {
             ActionType::SessionManager => "Session manager".to_string(),
             ActionType::Configuration => "Configuration".to_string(),
             ActionType::PluginManager => "Plugin manager".to_string(),
+            ActionType::LaunchPlugin(name) => plugin_display_name(name),
             ActionType::SwitchToMode(m) if *m == InputMode::RenamePane => "+rename-pane".to_string(),
             ActionType::SwitchToMode(m) if *m == InputMode::RenameTab => "+rename-tab".to_string(),
             ActionType::SwitchToMode(m) if *m == InputMode::EnterSearch => "+search".to_string(),
@@ -124,6 +126,7 @@ impl ActionType {
             ActionType::SessionManager => "󱂬",
             ActionType::Configuration => "󰒓",
             ActionType::PluginManager => "󰏗",
+            ActionType::LaunchPlugin(_) => "󰘳",
             ActionType::Detach => "󰗼",
             ActionType::Quit => "󰈆",
             ActionType::Other(_) => "󰘳",
@@ -158,6 +161,7 @@ impl ActionType {
             ActionType::SessionManager | ActionType::Configuration | ActionType::PluginManager => {
                 &colors.create
             }
+            ActionType::LaunchPlugin(_) => &colors.plugin,
             ActionType::Other(_) => &colors.dim,
         }
     }
@@ -195,8 +199,58 @@ impl ActionType {
             action if action.launches_plugin("session-manager") => ActionType::SessionManager,
             action if action.launches_plugin("configuration") => ActionType::Configuration,
             action if action.launches_plugin("plugin-manager") => ActionType::PluginManager,
+            action if is_any_plugin_launch(action) => {
+                ActionType::LaunchPlugin(extract_plugin_name(action))
+            }
             action if matches!(action, Action::NewTab(..)) => ActionType::NewTab,
             _ => ActionType::Other(format!("{:?}", action)),
         }
+    }
+}
+
+/// Returns true if the action launches any plugin (known or unknown).
+pub(crate) fn is_any_plugin_launch(action: &Action) -> bool {
+    let s = format!("{:?}", action);
+    s.starts_with("LaunchOrFocusPlugin") || s.starts_with("LaunchPlugin(")
+}
+
+/// Extract a canonical plugin name string from a plugin-launch action.
+/// Mirrors `RunPluginOrAlias::location_string()` / `RunPluginLocation::display()`.
+pub(crate) fn extract_plugin_name(action: &Action) -> String {
+    let s = format!("{:?}", action);
+    // Alias variant: PluginAlias { name: "zellij-loom", ...
+    if let Some(after) = s.split("name: \"").nth(1) {
+        if let Some(name) = after.split('"').next() {
+            return name.to_string();
+        }
+    }
+    // RunPlugin with Zellij location: location: Zellij(PluginTag("about"))
+    if let Some(after) = s.split("Zellij(PluginTag(\"").nth(1) {
+        if let Some(tag) = after.split('"').next() {
+            return format!("zellij:{}", tag);
+        }
+    }
+    // RunPlugin with file location: location: File("/path/to/plugin.wasm")
+    if let Some(after) = s.split("File(\"").nth(1) {
+        if let Some(path) = after.split('"').next() {
+            let name = path.split('/').last().unwrap_or(path);
+            return name.trim_end_matches(".wasm").to_string();
+        }
+    }
+    "Plugin".to_string()
+}
+
+/// Convert a plugin name to a human-readable display label.
+/// "zellij:about" → "About" (strip zellij: prefix, capitalize)
+/// "zellij-loom" → "zellij-loom" (third-party alias: keep as-is)
+fn plugin_display_name(name: &str) -> String {
+    if let Some(tag) = name.strip_prefix("zellij:") {
+        let mut chars = tag.chars();
+        match chars.next() {
+            None => tag.to_string(),
+            Some(f) => f.to_uppercase().collect::<String>() + chars.as_str(),
+        }
+    } else {
+        name.to_string()
     }
 }

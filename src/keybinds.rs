@@ -3,7 +3,7 @@ use std::collections::HashSet;
 use zellij_tile::prelude::actions::{Action, SearchDirection, SearchOption};
 use zellij_tile::prelude::*;
 
-use crate::action_types::ActionType;
+use crate::action_types::{is_any_plugin_launch, ActionType};
 
 /// A single keybinding entry for tooltip display.
 pub(crate) struct KeyAction {
@@ -60,7 +60,10 @@ pub(crate) fn get_actions_for_mode(
     mode: InputMode,
 ) -> ModeActions {
     let predicates = mode_predicates(mode);
-    let all_actions = find_actions(mode_info, mode, &predicates);
+    let mut all_actions = find_actions(mode_info, mode, &predicates);
+
+    // Append any plugin-launch keybinds not covered by explicit predicates.
+    all_actions.extend(collect_plugin_launches(mode_info, mode));
 
     // Find ActionTypes common to ALL tooltip modes (e.g., Quit, SwitchToMode(Locked))
     let common_types = find_common_action_types(mode_info);
@@ -232,6 +235,34 @@ fn description_for_action(action: &Action) -> String {
         Action::BreakPaneRight => "Break pane right".into(),
         other => ActionType::from_action(other).description(),
     }
+}
+
+/// Scan all keybinds for a mode and collect plugin-launch actions not covered
+/// by a known specific ActionType variant (SessionManager, Configuration, PluginManager).
+fn collect_plugin_launches(mode_info: &ModeInfo, mode: InputMode) -> Vec<KeyAction> {
+    let keybinds = all_keybinds_for_mode(mode_info, mode);
+    let mut seen: HashSet<ActionType> = HashSet::new();
+    let mut result = Vec::new();
+
+    for (key, actions) in &keybinds {
+        if let Some(first) = actions.first() {
+            if is_any_plugin_launch(first) {
+                let at = ActionType::from_action(first);
+                // Only include truly unknown plugins (LaunchPlugin variant);
+                // known ones (SessionManager, PluginManager, Configuration) are
+                // handled by explicit predicates and should not be duplicated.
+                if matches!(&at, ActionType::LaunchPlugin(_)) && !seen.contains(&at) {
+                    seen.insert(at.clone());
+                    result.push(KeyAction {
+                        key: format_key(&format!("{}", key)),
+                        action_type: at,
+                        description: description_for_action(first),
+                    });
+                }
+            }
+        }
+    }
+    result
 }
 
 /// Returns ordered predicates for each mode.
