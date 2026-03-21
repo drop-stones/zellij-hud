@@ -383,6 +383,17 @@ impl ZellijPlugin for State {
                 let new_mode = mode_info.mode;
 
                 self.session_name = mode_info.session_name.clone().unwrap_or_default();
+
+                // Apply system theme on first ModeUpdate (Styling is now available).
+                if self.hud_config.use_system_theme {
+                    self.hud_config.apply_system_theme(
+                        &mode_info.style.colors,
+                        &self.plugin_config,
+                    );
+                    // Only apply once; subsequent ModeUpdates won't change the theme.
+                    self.hud_config.use_system_theme = false;
+                }
+
                 self.mode_info = Some(mode_info);
 
                 let base = self.resolve_base_mode();

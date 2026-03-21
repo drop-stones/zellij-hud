@@ -1,6 +1,6 @@
 use std::collections::{BTreeMap, HashMap};
 
-use zellij_tile::prelude::InputMode;
+use zellij_tile::prelude::{InputMode, PaletteColor, Styling};
 
 /// Which mode is considered the "home" mode where HUD hides.
 #[derive(Clone, Copy, PartialEq)]
@@ -27,6 +27,29 @@ pub(crate) struct ThemePalette {
 }
 
 impl ThemePalette {
+    /// Build a palette from zellij's `Styling` (system theme).
+    ///
+    /// Maps `StyleDeclaration` fields back to semantic palette colors using the
+    /// known `Palette → Styling` conversion in zellij (data.rs:1577).
+    pub(crate) fn from_styling(s: &Styling) -> Self {
+        let fg = s.text_unselected.base;
+        // Derive dim from fg. table_title.background maps to palette.gray, but
+        // old-style palette themes don't define gray and new-style themes may
+        // assign arbitrary colors. A dimmed fg is consistently readable.
+        let dim = dim_color(fg);
+        Self {
+            fg: palette_color_to_hex(fg),
+            dim: palette_color_to_hex(dim),
+            red: palette_color_to_hex(s.exit_code_error.base),
+            green: palette_color_to_hex(s.exit_code_success.base),
+            yellow: palette_color_to_hex(s.exit_code_error.emphasis_0),
+            blue: palette_color_to_hex(s.ribbon_unselected.emphasis_2),
+            magenta: palette_color_to_hex(s.text_unselected.emphasis_3),
+            cyan: palette_color_to_hex(s.text_unselected.emphasis_1),
+            orange: palette_color_to_hex(s.text_unselected.emphasis_0),
+        }
+    }
+
     /// Look up a built-in theme by name. Unknown names fall back to tokyonight.
     pub(crate) fn from_name(name: &str) -> Self {
         match name {
@@ -107,6 +130,24 @@ impl ThemePalette {
     }
 }
 
+/// Produce a dimmed variant of a color (50% brightness).
+fn dim_color(color: PaletteColor) -> PaletteColor {
+    match color {
+        PaletteColor::Rgb((r, g, b)) => PaletteColor::Rgb((r / 2, g / 2, b / 2)),
+        // EightBit(8) = "bright black" = dark gray in most terminals
+        PaletteColor::EightBit(_) => PaletteColor::EightBit(8),
+    }
+}
+
+/// Convert a `PaletteColor` to a string usable by `hex_to_fg`.
+/// Rgb → "#rrggbb", EightBit → "8bit:N".
+fn palette_color_to_hex(color: PaletteColor) -> String {
+    match color {
+        PaletteColor::Rgb((r, g, b)) => format!("#{:02x}{:02x}{:02x}", r, g, b),
+        PaletteColor::EightBit(n) => format!("8bit:{}", n),
+    }
+}
+
 impl Default for ThemePalette {
     fn default() -> Self {
         Self {
@@ -175,20 +216,55 @@ pub(crate) struct HudConfig {
     pub(crate) base_mode: BaseMode,
     pub(crate) separator: String,
     pub(crate) timezone_offset: i64,
+    /// Whether to use zellij's theme colors (theme "system").
+    pub(crate) use_system_theme: bool,
 }
 
 impl HudConfig {
     pub(crate) fn from_config(config: &BTreeMap<String, String>) -> Self {
-        // 1. Resolve theme palette
-        let mut palette = match config.get("theme") {
-            Some(name) => ThemePalette::from_name(name),
-            None => ThemePalette::default(),
-        };
+        let use_system_theme = config.get("theme").map_or(true, |t| t == "system");
 
-        // 2. Apply palette_* overrides
+        // For "system" (default), use tokyonight as placeholder until ModeUpdate delivers Styling.
+        let mut palette = match config.get("theme") {
+            Some(name) if name != "system" => ThemePalette::from_name(name),
+            _ => ThemePalette::default(),
+        };
         palette.apply_overrides(config);
 
-        // 3. Derive all ANSI defaults from palette
+        let mut hud = Self::build_from_palette(&palette, config);
+        hud.use_system_theme = use_system_theme;
+        hud
+    }
+
+    /// Rebuild colors from zellij's system theme. Called when ModeUpdate arrives.
+    pub(crate) fn apply_system_theme(
+        &mut self,
+        styling: &Styling,
+        config: &BTreeMap<String, String>,
+    ) {
+        let mut palette = ThemePalette::from_styling(styling);
+        palette.apply_overrides(config);
+        let rebuilt = Self::build_from_palette(&palette, config);
+
+        // Update color fields only; preserve non-color config (format, separator, etc.)
+        self.color_session = rebuilt.color_session;
+        self.color_mode = rebuilt.color_mode;
+        self.mode_colors = rebuilt.mode_colors;
+        self.color_tab_active = rebuilt.color_tab_active;
+        self.color_tab_inactive = rebuilt.color_tab_inactive;
+        self.color_cwd = rebuilt.color_cwd;
+        self.color_date = rebuilt.color_date;
+        self.color_time = rebuilt.color_time;
+        self.color_memory = rebuilt.color_memory;
+        self.color_separator = rebuilt.color_separator;
+        self.color_tooltip_key = rebuilt.color_tooltip_key;
+        self.color_tooltip_arrow = rebuilt.color_tooltip_arrow;
+        self.color_tooltip_action = rebuilt.color_tooltip_action;
+        self.color_tooltip_mode = rebuilt.color_tooltip_mode;
+        self.icon_colors = rebuilt.icon_colors;
+    }
+
+    fn build_from_palette(palette: &ThemePalette, config: &BTreeMap<String, String>) -> Self {
         let fg = |hex: &str| Self::hex_to_fg(hex).unwrap_or_default();
 
         let mode_colors = HashMap::from([
@@ -208,7 +284,7 @@ impl HudConfig {
             (InputMode::Prompt, fg(&palette.blue)),
         ]);
 
-        let icon_colors = IconColors::from_palette(&palette);
+        let icon_colors = IconColors::from_palette(palette);
 
         let mut hud = Self {
             format_left: "{session} | {mode} | {tabs}".to_string(),
@@ -233,13 +309,14 @@ impl HudConfig {
             base_mode: BaseMode::Auto,
             separator: "│".to_string(),
             timezone_offset: 0,
+            use_system_theme: false,
         };
 
-        // 4. Apply color_* overrides (hex or palette name)
+        // Apply color_* overrides (hex or palette name)
         macro_rules! color_fg {
             ($key:expr, $field:expr) => {
                 if let Some(v) = config.get($key) {
-                    if let Some(c) = Self::resolve_fg(v, &palette) {
+                    if let Some(c) = Self::resolve_fg(v, palette) {
                         $field = c;
                     }
                 }
@@ -278,7 +355,7 @@ impl HudConfig {
         ];
         for (key, mode) in &mode_map {
             if let Some(v) = config.get(*key) {
-                if let Some(c) = Self::resolve_fg(v, &palette) {
+                if let Some(c) = Self::resolve_fg(v, palette) {
                     hud.mode_colors.insert(*mode, c);
                 }
             }
@@ -328,6 +405,10 @@ impl HudConfig {
     }
 
     pub(crate) fn hex_to_fg(hex: &str) -> Option<String> {
+        if let Some(n) = hex.strip_prefix("8bit:") {
+            let n: u8 = n.parse().ok()?;
+            return Some(format!("\x1b[38;5;{}m", n));
+        }
         let (r, g, b) = Self::parse_hex(hex)?;
         Some(format!("\x1b[38;2;{};{};{}m", r, g, b))
     }
