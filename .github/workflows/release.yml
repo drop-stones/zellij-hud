@@ -25,4 +25,4 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: target/wasm32-wasip1/release/zellij_hud.wasm
+          files: target/wasm32-wasip1/release/zellij-hud.wasm
