@@ -1,4 +1,4 @@
-# 🪟 zellij-hud
+# ◨ zellij-hud
 
 On-demand floating status bar and which-key tooltip for [zellij](https://zellij.dev/).
 
@@ -10,7 +10,8 @@ Hidden in your base mode (zero footprint), appears as floating panes when you sw
 
 - **Floating status bar** — session name, mode indicator, tabs, CWD, date/time, memory usage
 - **Which-key tooltip** — context-aware keybinding hints that auto-resize per mode
-- **Theme presets** — tokyonight (default), catppuccin-mocha, nord, gruvbox-dark
+- **Auto theme** — inherits colors from your zellij theme automatically
+- **Theme presets** — tokyonight, catppuccin-mocha, nord, gruvbox-dark (manual override)
 - **Fully configurable** — colors, layout format, per-mode colors, enable/disable components
 - **Base mode detection** — works with both locked-centric and normal-centric keybind setups
 
@@ -21,55 +22,20 @@ Hidden in your base mode (zero footprint), appears as floating panes when you sw
 
 ## Installation
 
-### Automated Installation
-
-Zellij can download the plugin automatically when you specify it with its release URL. Add to your zellij config (`config.kdl`):
+Add the following to your zellij config (`config.kdl`):
 
 ```kdl
+plugins {
+    // You can also use a local path: location="file:/path/to/zellij-hud.wasm"
+    zellij-hud location="https://github.com/drop-stones/zellij-hud/releases/latest/download/zellij-hud.wasm"
+}
+
 load_plugins {
-    "https://github.com/drop-stones/zellij-hud/releases/latest/download/zellij-hud.wasm" {
-        theme "tokyonight"
-    }
+    "zellij-hud"
 }
 ```
 
-> **Note:** Zellij may have a bug that corrupts downloads when multiple tabs load the plugin simultaneously. If you experience issues, use manual installation instead.
-
-### Manual Installation
-
-Download the latest `zellij-hud.wasm` from [GitHub Releases](https://github.com/drop-stones/zellij-hud/releases/latest) and place it somewhere zellij can access. Then add to your zellij config (`config.kdl`):
-
-```kdl
-load_plugins {
-    "file:/path/to/zellij-hud.wasm" {
-        theme "tokyonight"
-    }
-}
-```
-
-### Nix Flakes
-
-Add this repository to your flake inputs:
-
-```nix
-inputs = {
-  zellij-hud.url = "github:drop-stones/zellij-hud";
-};
-```
-
-You can then reference the plugin directly via `inputs.zellij-hud.packages.${pkgs.system}.default`. With home-manager:
-
-```nix
-xdg.configFile."zellij/config.kdl".text = ''
-  load_plugins {
-      "file:${inputs.zellij-hud.packages.${pkgs.system}.default}/bin/zellij-hud.wasm" {
-          theme "tokyonight"
-      }
-  }
-'';
-```
-
-> **Note:** Load via `load_plugins` or `zellij plugin -- file:/path/to/zellij-hud.wasm`. Loading via layout may cause issues.
+`plugins` defines the plugin alias with its location and configuration. `load_plugins` loads it on startup. Zellij downloads the plugin on first use and caches it.
 
 ## Permissions
 
