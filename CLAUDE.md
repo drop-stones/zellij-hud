@@ -20,7 +20,7 @@ zellij plugin -- file:~/repos/zellij/zellij-hud/target/wasm32-wasip1/release/zel
 
 ## Architecture: Daemon + HUD + Tooltip
 
-Single WASM binary (`zellij-tile = "0.43.1"`), three roles distinguished by `Role` enum:
+Single WASM binary (`zellij-tile = "0.44.0"`), three roles distinguished by `Role` enum:
 
 ### Source files
 
@@ -51,9 +51,10 @@ Single WASM binary (`zellij-tile = "0.43.1"`), three roles distinguished by `Rol
 ### Rendering
 
 - Use `print!()` not `println!()` — println causes blank output
-- Floating pane height must be 3+ (border lines consume 2 rows)
+- HUD is borderless (height=1); tooltip keeps frame (height = content + 2 border rows)
 - `Text` API `color_range()` uses **character indices** (`.chars().count()`), not byte indices
 - `print_text(text)` for theme-colored output with `Text::new().opaque()`
+- HUD background color: `\x1b[0m` resets in segment output are replaced with `\x1b[0m{bg}` to maintain background across segments
 
 ### Tab following
 
@@ -69,8 +70,8 @@ Single WASM binary (`zellij-tile = "0.43.1"`), three roles distinguished by `Rol
 ### Frame
 
 - `rename_plugin_pane(id, "")` clears frame title
-- No per-pane borderless API for floating panes — frames always visible
-- `toggle_pane_frames()` is global only
+- `FloatingPaneCoordinates::new()` 6th arg `borderless: Option<bool>` — HUD uses `Some(true)`, tooltip uses `None`
+- `set_pane_borderless(pane_id, borderless)` available for runtime control
 
 ### Permissions
 
@@ -87,6 +88,9 @@ color_* override > palette_* override > theme preset > tokyonight default
 ### Palette (10 colors)
 
 `fg`, `bg`, `dim`, `red`, `green`, `yellow`, `blue`, `magenta`, `cyan`, `orange`
+
+- `bg` is used for HUD status bar background color
+- System theme: `bg` = `ribbon_unselected.base` (maps to `palette.black` in zellij)
 
 ### `color_*` values
 
@@ -118,9 +122,12 @@ Count incoming `SwitchToMode` transitions: the mode other modes switch back to m
 
 ## TODO
 
+- [ ] Powerline-style segments: render HUD segments with powerline arrow separators (e.g. ` NORMAL   main `) using background/foreground color transitions per segment
 - [ ] Theme file splitting: split presets into `src/themes/tokyonight.rs` etc.
-- [ ] Frame invisibility: find a way to hide floating pane border
 - [ ] compact-bar replacement: once stable, disable built-in compact-bar
+- [x] HUD background color: added `bg` palette color and `color_bg` for solid status bar background
+- [x] Borderless HUD: use `FloatingPaneCoordinates::borderless` for single-line HUD (zellij 0.44.0)
+- [x] zellij 0.44.0 migration: updated Action enum to struct variants, zellij-tile 0.44.0
 - [x] Theme-aware colors: use `mode_info.style.colors` for dynamic color mapping
 
 ## Upstream proposals (zellij)
@@ -131,8 +138,6 @@ Count incoming `SwitchToMode` transitions: the mode other modes switch back to m
 
 **Proposal**: Add a target tab field to `MessageToPlugin` (e.g. `new_plugin_instance_should_open_in_tab(tab_index)`) so plugins can specify the destination tab at spawn time, avoiding the post-spawn move and the flash.
 
-### Per-pane borderless floating panes
+### ~~Per-pane borderless floating panes~~ (resolved in v0.44.0)
 
-Floating panes always have a 1-cell border on each side, forcing a minimum height of 3 rows (1 content + 2 border). For a single-line status bar (HUD), this wastes 2 rows. `toggle_pane_frames()` is global only and affects all panes.
-
-**Proposal**: Add a per-pane API to control border visibility for floating panes (e.g. `FloatingPaneCoordinates::borderless(true)` or a `set_pane_borderless(pane_id)` function).
+Resolved: zellij 0.44.0 added `FloatingPaneCoordinates::borderless` and `set_pane_borderless()` API.

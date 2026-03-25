@@ -13,9 +13,10 @@ pub(crate) enum BaseMode {
     Normal,
 }
 
-/// 9-color palette used to derive all UI colors.
+/// 10-color palette used to derive all UI colors.
 pub(crate) struct ThemePalette {
     pub(crate) fg: String,
+    pub(crate) bg: String,
     pub(crate) dim: String,
     pub(crate) red: String,
     pub(crate) green: String,
@@ -39,6 +40,7 @@ impl ThemePalette {
         let dim = dim_color(fg);
         Self {
             fg: palette_color_to_hex(fg),
+            bg: palette_color_to_hex(s.ribbon_unselected.base),
             dim: palette_color_to_hex(dim),
             red: palette_color_to_hex(s.exit_code_error.base),
             green: palette_color_to_hex(s.exit_code_success.base),
@@ -55,6 +57,7 @@ impl ThemePalette {
         match name {
             "catppuccin-mocha" => Self {
                 fg: "#cdd6f4".into(),
+                bg: "#1e1e2e".into(),
                 dim: "#585b70".into(),
                 red: "#f38ba8".into(),
                 green: "#a6e3a1".into(),
@@ -66,6 +69,7 @@ impl ThemePalette {
             },
             "nord" => Self {
                 fg: "#eceff4".into(),
+                bg: "#2e3440".into(),
                 dim: "#4c566a".into(),
                 red: "#bf616a".into(),
                 green: "#a3be8c".into(),
@@ -77,6 +81,7 @@ impl ThemePalette {
             },
             "gruvbox-dark" => Self {
                 fg: "#ebdbb2".into(),
+                bg: "#282828".into(),
                 dim: "#665c54".into(),
                 red: "#fb4934".into(),
                 green: "#b8bb26".into(),
@@ -101,6 +106,7 @@ impl ThemePalette {
             };
         }
         override_field!("palette_fg", self.fg);
+        override_field!("palette_bg", self.bg);
         override_field!("palette_dim", self.dim);
         override_field!("palette_red", self.red);
         override_field!("palette_green", self.green);
@@ -117,6 +123,7 @@ impl ThemePalette {
     pub(crate) fn resolve(&self, name: &str) -> Option<&str> {
         match name {
             "fg" => Some(&self.fg),
+            "bg" => Some(&self.bg),
             "dim" => Some(&self.dim),
             "red" => Some(&self.red),
             "green" => Some(&self.green),
@@ -152,6 +159,7 @@ impl Default for ThemePalette {
     fn default() -> Self {
         Self {
             fg: "#c0caf5".into(),
+            bg: "#1a1b26".into(),
             dim: "#565f89".into(),
             red: "#f7768e".into(),
             green: "#9ece6a".into(),
@@ -196,6 +204,7 @@ impl IconColors {
 pub(crate) struct HudConfig {
     pub(crate) format_left: String,
     pub(crate) format_right: String,
+    pub(crate) color_bg: String,
     pub(crate) color_session: String,
     pub(crate) color_mode: String,
     pub(crate) mode_colors: HashMap<InputMode, String>,
@@ -215,6 +224,12 @@ pub(crate) struct HudConfig {
     pub(crate) enable_tooltip: bool,
     pub(crate) base_mode: BaseMode,
     pub(crate) separator: String,
+    /// Powerline mode: each segment gets its own background color with arrow separators.
+    pub(crate) powerline: bool,
+    /// Separator arrow for the left area (powerline mode only).
+    pub(crate) separator_left: String,
+    /// Separator arrow for the right area (powerline mode only).
+    pub(crate) separator_right: String,
     pub(crate) timezone_offset: i64,
     /// Whether to use zellij's theme colors (theme "system").
     pub(crate) use_system_theme: bool,
@@ -247,6 +262,7 @@ impl HudConfig {
         let rebuilt = Self::build_from_palette(&palette, config);
 
         // Update color fields only; preserve non-color config (format, separator, etc.)
+        self.color_bg = rebuilt.color_bg;
         self.color_session = rebuilt.color_session;
         self.color_mode = rebuilt.color_mode;
         self.mode_colors = rebuilt.mode_colors;
@@ -289,6 +305,7 @@ impl HudConfig {
         let mut hud = Self {
             format_left: "{session} | {mode} | {tabs}".to_string(),
             format_right: "{cwd} | {memory} | {date} | {time}".to_string(),
+            color_bg: Self::hex_to_bg(&palette.bg).unwrap_or_default(),
             color_session: fg(&palette.cyan),
             color_mode: fg(&palette.blue),
             mode_colors,
@@ -308,6 +325,9 @@ impl HudConfig {
             enable_tooltip: true,
             base_mode: BaseMode::Auto,
             separator: "│".to_string(),
+            powerline: false,
+            separator_left: "\u{e0b0}".to_string(),
+            separator_right: "\u{e0b2}".to_string(),
             timezone_offset: 0,
             use_system_theme: false,
         };
@@ -321,6 +341,11 @@ impl HudConfig {
                     }
                 }
             };
+        }
+        if let Some(v) = config.get("color_bg") {
+            if let Some(c) = Self::resolve_bg(v, palette) {
+                hud.color_bg = c;
+            }
         }
         color_fg!("color_session", hud.color_session);
         color_fg!("color_mode", hud.color_mode);
@@ -370,6 +395,24 @@ impl HudConfig {
         if let Some(v) = config.get("separator") {
             hud.separator = v.clone();
         }
+        if let Some(v) = config.get("powerline") {
+            hud.powerline = v != "false";
+        }
+        // separator_left/right: if only left is set, right falls back to left's value.
+        match (config.get("separator_left"), config.get("separator_right")) {
+            (Some(l), Some(r)) => {
+                hud.separator_left = l.clone();
+                hud.separator_right = r.clone();
+            }
+            (Some(l), None) => {
+                hud.separator_left = l.clone();
+                hud.separator_right = l.clone();
+            }
+            (None, Some(r)) => {
+                hud.separator_right = r.clone();
+            }
+            (None, None) => {}
+        }
         if let Some(v) = config.get("timezone") {
             if let Ok(n) = v.parse::<i64>() {
                 hud.timezone_offset = n;
@@ -402,6 +445,20 @@ impl HudConfig {
     fn resolve_fg(value: &str, palette: &ThemePalette) -> Option<String> {
         let hex = palette.resolve(value).unwrap_or(value);
         Self::hex_to_fg(hex)
+    }
+
+    fn resolve_bg(value: &str, palette: &ThemePalette) -> Option<String> {
+        let hex = palette.resolve(value).unwrap_or(value);
+        Self::hex_to_bg(hex)
+    }
+
+    fn hex_to_bg(hex: &str) -> Option<String> {
+        if let Some(n) = hex.strip_prefix("8bit:") {
+            let n: u8 = n.parse().ok()?;
+            return Some(format!("\x1b[48;5;{}m", n));
+        }
+        let (r, g, b) = Self::parse_hex(hex)?;
+        Some(format!("\x1b[48;2;{};{};{}m", r, g, b))
     }
 
     pub(crate) fn hex_to_fg(hex: &str) -> Option<String> {

@@ -530,20 +530,30 @@ impl ZellijPlugin for State {
     fn render(&mut self, rows: usize, cols: usize) {
         match self.role {
             Role::Hud => {
-                let left = format!(
-                    " {}",
-                    self.render_format(&self.hud_config.format_left.clone())
-                );
-                let right = format!(
-                    "{} ",
-                    self.render_format(&self.hud_config.format_right.clone()),
-                );
+                if self.hud_config.powerline {
+                    self.render_hud_powerline(cols);
+                } else {
+                    let bg = &self.hud_config.color_bg;
+                    let reset = "\x1b[0m";
+                    let left = format!(
+                        " {}",
+                        self.render_format(&self.hud_config.format_left.clone())
+                    );
+                    let right = format!(
+                        "{} ",
+                        self.render_format(&self.hud_config.format_right.clone()),
+                    );
 
-                let left_visible = visible_len(&left);
-                let right_visible = visible_len(&right);
-                let gap = cols.saturating_sub(left_visible + right_visible);
+                    let left_visible = visible_len(&left);
+                    let right_visible = visible_len(&right);
+                    let gap = cols.saturating_sub(left_visible + right_visible);
 
-                print!("{}{}{}", left, " ".repeat(gap), right);
+                    // Replace full resets with reset+bg so background color persists
+                    // across segment boundaries.
+                    let content = format!("{}{}{}", left, " ".repeat(gap), right);
+                    let content = content.replace("\x1b[0m", &format!("\x1b[0m{bg}"));
+                    print!("{bg}{content}{reset}");
+                }
             }
             Role::Tooltip => {
                 self.render_tooltip(rows, cols);

@@ -71,6 +71,127 @@ impl State {
         }
     }
 
+    /// Convert fg ANSI escape to bg ANSI escape.
+    /// e.g. `\x1b[38;2;R;G;Bm` → `\x1b[48;2;R;G;Bm`
+    fn fg_to_bg(ansi: &str) -> String {
+        ansi.replace("\x1b[38;", "\x1b[48;")
+    }
+
+    /// Convert bg ANSI escape to fg ANSI escape.
+    fn bg_to_fg(ansi: &str) -> String {
+        ansi.replace("\x1b[48;", "\x1b[38;")
+    }
+
+    /// The segment's representative color (as fg ANSI). Used as bg in powerline mode.
+    fn segment_color(&self, placeholder: &str) -> &str {
+        let c = &self.hud_config;
+        match placeholder {
+            "{session}" => &c.color_session,
+            "{mode}" => c.color_for_mode(self.mode),
+            "{tabs}" => &c.color_tab_active,
+            "{cwd}" => &c.color_cwd,
+            "{date}" => &c.color_date,
+            "{time}" => &c.color_time,
+            "{memory}" => &c.color_memory,
+            _ => &c.color_separator,
+        }
+    }
+
+    /// Whether a segment has visible content (used to skip empty segments).
+    fn segment_has_content(&self, placeholder: &str) -> bool {
+        match placeholder {
+            "{memory}" => !self.memory_text.is_empty(),
+            _ => true,
+        }
+    }
+
+    /// Render segment text for powerline mode.
+    /// Returns plain text with minimal ANSI (bold/reset-bold for active tabs only).
+    /// The caller applies fg/bg colors around this text.
+    fn segment_powerline_text(&self, placeholder: &str) -> String {
+        match placeholder {
+            "{session}" => format!("󰆍 {}", self.session_name),
+            "{mode}" => format!("{} {}", self.mode_icon(), format!("{:?}", self.mode).to_uppercase()),
+            "{tabs}" => {
+                let mut out = String::new();
+                for tab in &self.tabs {
+                    if tab.active {
+                        out.push_str(&format!("\x1b[1m{}\x1b[22m ", tab.name));
+                    } else {
+                        out.push_str(&format!("{} ", tab.name));
+                    }
+                }
+                out.trim_end().to_string()
+            }
+            "{cwd}" => format!("󰉖 {}", self.format_cwd()),
+            "{date}" => format!("󰃭 {}", self.format_date()),
+            "{time}" => format!("󰥔 {}", self.format_time()),
+            "{memory}" => format!("󰍛 {}", self.memory_text),
+            _ => String::new(),
+        }
+    }
+
+    /// Render HUD in powerline mode.
+    ///
+    /// Left area:  [seg_bg][text_fg] content [seg_fg][next_bg]▶ ...
+    /// Right area: ... [prev_bg][seg_fg]◀[seg_bg][text_fg] content
+    pub(crate) fn render_hud_powerline(&self, cols: usize) {
+        let c = &self.hud_config;
+        let hud_bg = &c.color_bg;
+        let text_fg = Self::bg_to_fg(hud_bg);
+        let reset = "\x1b[0m";
+        let sep_left = &c.separator_left;
+        let sep_right = &c.separator_right;
+
+        let left_segs: Vec<&str> = c.format_left.split(" | ")
+            .map(str::trim)
+            .filter(|p| self.segment_has_content(p))
+            .collect();
+        let right_segs: Vec<&str> = c.format_right.split(" | ")
+            .map(str::trim)
+            .filter(|p| self.segment_has_content(p))
+            .collect();
+
+        // Build left area
+        let mut left = String::new();
+        for (i, &seg) in left_segs.iter().enumerate() {
+            let seg_fg = self.segment_color(seg);
+            let seg_bg = Self::fg_to_bg(seg_fg);
+            let content = self.segment_powerline_text(seg);
+            left.push_str(&format!("{seg_bg}{text_fg} {content} "));
+            // Arrow: fg = this segment's color, bg = next segment's color (or hud_bg)
+            let next_bg = if i + 1 < left_segs.len() {
+                Self::fg_to_bg(self.segment_color(left_segs[i + 1]))
+            } else {
+                hud_bg.clone()
+            };
+            left.push_str(&format!("{reset}{seg_fg}{next_bg}{sep_left}"));
+        }
+
+        // Build right area
+        let mut right = String::new();
+        for (i, &seg) in right_segs.iter().enumerate() {
+            let seg_fg = self.segment_color(seg);
+            let seg_bg = Self::fg_to_bg(seg_fg);
+            let content = self.segment_powerline_text(seg);
+            // Arrow: fg = this segment's color, bg = previous area's color (hud_bg or prev seg)
+            let prev_bg = if i == 0 {
+                hud_bg.clone()
+            } else {
+                Self::fg_to_bg(self.segment_color(right_segs[i - 1]))
+            };
+            right.push_str(&format!("{reset}{prev_bg}{seg_fg}{sep_right}"));
+            right.push_str(&format!("{seg_bg}{text_fg} {content} "));
+        }
+        right.push_str(reset);
+
+        let left_visible = visible_len(&left);
+        let right_visible = visible_len(&right);
+        let gap = cols.saturating_sub(left_visible + right_visible);
+
+        print!("{hud_bg}{left}{}{right}", " ".repeat(gap));
+    }
+
     pub(crate) fn render_format(&self, format_str: &str) -> String {
         let c = &self.hud_config;
         let reset = "\x1b[0m";
