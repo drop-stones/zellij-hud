@@ -202,7 +202,7 @@ fn tooltip_coordinates(
         .unwrap_or((24, 80));
 
     let (height, width) = tooltip_dimensions(ma);
-    let hud_height = if status_bar_enabled { 3 } else { 0 };
+    let hud_height = if status_bar_enabled { 1 } else { 0 };
     let w = width.min(cols);
     let h = height.min(rows.saturating_sub(hud_height));
     let x = cols.saturating_sub(w);
@@ -214,6 +214,7 @@ fn tooltip_coordinates(
         Some(format!("{}", w)),
         Some(format!("{}", h)),
         Some(true),
+        None,
     )
     .unwrap_or_default()
 }

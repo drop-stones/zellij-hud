@@ -83,7 +83,7 @@ impl State {
     pub(crate) fn hud_coordinates(&self) -> FloatingPaneCoordinates {
         let (rows, cols) = self.display_area();
 
-        let height = 3;
+        let height = 1;
         let y = rows.saturating_sub(height);
 
         FloatingPaneCoordinates::new(
@@ -91,6 +91,7 @@ impl State {
             Some(format!("{}", y)),
             Some(format!("{}", cols)),
             Some(format!("{}", height)),
+            Some(true),
             Some(true),
         )
         .unwrap_or_default()
@@ -103,7 +104,7 @@ impl State {
     ) -> FloatingPaneCoordinates {
         let (rows, cols) = self.display_area();
 
-        let hud_height = if self.enable_status_bar { 3 } else { 0 };
+        let hud_height = if self.enable_status_bar { 1 } else { 0 };
         let width = tt_cols.min(cols);
         let height = tt_rows.min(rows.saturating_sub(hud_height));
         let x = cols.saturating_sub(width);
@@ -115,6 +116,7 @@ impl State {
             Some(format!("{}", width)),
             Some(format!("{}", height)),
             Some(true),
+            None,
         )
         .unwrap_or_default()
     }

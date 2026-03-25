@@ -253,21 +253,6 @@ impl ZellijPlugin for State {
                 set_selectable(false);
                 rename_plugin_pane(ids.plugin_id, "");
 
-                // Attempt to move to initial_tab immediately in load(), before permissions
-                // and before the first render cycle. This minimises the window during which
-                // the pane is visible on the wrong tab for other clients.
-                // Only the active clone (own == spawned) should move the pane.
-                if self.own_client_id == self.spawned_for_client {
-                    if let Some(plugin_id) = self.own_plugin_id {
-                        break_panes_to_tab_with_index(
-                            &[PaneId::Plugin(plugin_id)],
-                            self.initial_tab.saturating_sub(1),
-                            false,
-                        );
-                        self.active_tab_idx = self.initial_tab;
-                    }
-                }
-
                 request_permission(&[
                     PermissionType::ReadApplicationState,
                     PermissionType::ChangeApplicationState,
