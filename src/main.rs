@@ -517,11 +517,11 @@ impl ZellijPlugin for State {
                     let reset = "\x1b[0m";
                     let left = format!(
                         " {}",
-                        self.render_format(&self.hud_config.format_left.clone())
+                        self.render_format(&self.hud_config.format_left.clone(), false)
                     );
                     let right = format!(
                         "{} ",
-                        self.render_format(&self.hud_config.format_right.clone()),
+                        self.render_format(&self.hud_config.format_right.clone(), true),
                     );
 
                     let left_visible = visible_len(&left);

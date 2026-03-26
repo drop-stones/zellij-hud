@@ -129,8 +129,8 @@ impl State {
         let hud_bg = c.color_bg.bg();
         let text_fg = c.color_bg.fg();
         let reset = "\x1b[0m";
-        let sep_left = &c.separator_left;
-        let sep_right = &c.separator_right;
+        let sep_left = c.separator.powerline_left();
+        let sep_right = c.separator.powerline_right();
 
         let left_segs: Vec<&str> = c.format_left.split(" | ")
             .map(str::trim)
@@ -183,10 +183,15 @@ impl State {
         print!("{hud_bg}{left}{}{right}", " ".repeat(gap));
     }
 
-    pub(crate) fn render_format(&self, format_str: &str) -> String {
+    pub(crate) fn render_format(&self, format_str: &str, is_right: bool) -> String {
         let c = &self.hud_config;
         let reset = "\x1b[0m";
-        let sep = format!("{}{}{reset}", c.color_separator.fg(), c.separator);
+        let sep_char = if is_right {
+            c.separator.minimal_right()
+        } else {
+            c.separator.minimal_left()
+        };
+        let sep = format!("{}{}{reset}", c.color_separator.fg(), sep_char);
 
         let parts: Vec<&str> = format_str.split(" | ").collect();
         let mut out = String::new();

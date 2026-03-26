@@ -52,6 +52,69 @@ pub(crate) enum BarStyle {
     Powerline,
 }
 
+/// Named separator preset. Defines characters for both minimal and powerline modes.
+#[derive(Clone, Copy, Default)]
+pub(crate) enum SeparatorPreset {
+    #[default]
+    Triangle,
+    Circle,
+    Pipe,
+    Slash,
+    Backslash,
+}
+
+impl SeparatorPreset {
+    pub(crate) fn from_str(s: &str) -> Self {
+        match s {
+            "circle"    => Self::Circle,
+            "pipe"      => Self::Pipe,
+            "slash"     => Self::Slash,
+            "backslash" => Self::Backslash,
+            _           => Self::Triangle,
+        }
+    }
+    /// Thin separator for the left area in minimal mode.
+    pub(crate) fn minimal_left(self) -> &'static str {
+        match self {
+            Self::Triangle  => "\u{e0b1}",
+            Self::Circle    => "\u{e0b5}",
+            Self::Pipe      => "|",
+            Self::Slash     => "\u{e0b9}",
+            Self::Backslash => "\u{e0bd}",
+        }
+    }
+    /// Thin separator for the right area in minimal mode.
+    pub(crate) fn minimal_right(self) -> &'static str {
+        match self {
+            Self::Triangle  => "\u{e0b3}",
+            Self::Circle    => "\u{e0b7}",
+            Self::Pipe      => "|",
+            Self::Slash     => "\u{e0b9}",   // same direction as left
+            Self::Backslash => "\u{e0bd}",   // same direction as left
+        }
+    }
+    /// Arrow character for the left area in powerline mode.
+    pub(crate) fn powerline_left(self) -> &'static str {
+        match self {
+            Self::Triangle  => "\u{e0b0}",
+            Self::Circle    => "\u{e0b4}",
+            Self::Pipe      => "\u{258c}", // LEFT HALF BLOCK ▌
+            Self::Slash     => "\u{e0b8}",
+            Self::Backslash => "\u{e0bc}",
+        }
+    }
+    /// Arrow character for the right area in powerline mode.
+    pub(crate) fn powerline_right(self) -> &'static str {
+        match self {
+            Self::Triangle  => "\u{e0b2}",
+            Self::Circle    => "\u{e0b6}",
+            Self::Pipe      => "\u{2590}", // RIGHT HALF BLOCK ▐
+            Self::Slash     => "\u{e0be}",
+            Self::Backslash => "\u{e0ba}",
+        }
+    }
+}
+
 /// 10-color palette used to derive all UI colors.
 pub(crate) struct ThemePalette {
     pub(crate) fg: String,
@@ -262,14 +325,10 @@ pub(crate) struct HudConfig {
     pub(crate) icon_colors: IconColors,
     pub(crate) enable_status_bar: bool,
     pub(crate) enable_tooltip: bool,
-    pub(crate) separator: String,
-    /// Powerline mode: each segment gets its own background color with arrow separators.
+    /// Named separator preset (triangle, circle, pipe, slash, backslash).
+    pub(crate) separator: SeparatorPreset,
     /// HUD rendering style (minimal or powerline).
     pub(crate) bar: BarStyle,
-    /// Separator arrow for the left area (powerline mode only).
-    pub(crate) separator_left: String,
-    /// Separator arrow for the right area (powerline mode only).
-    pub(crate) separator_right: String,
     pub(crate) timezone_offset: i64,
     /// Whether to use zellij's theme colors (theme "system").
     pub(crate) use_system_theme: bool,
@@ -363,10 +422,8 @@ impl HudConfig {
             icon_colors,
             enable_status_bar: true,
             enable_tooltip: true,
-            separator: "│".to_string(),
+            separator: SeparatorPreset::Triangle,
             bar: BarStyle::Minimal,
-            separator_left: "\u{e0b0}".to_string(),
-            separator_right: "\u{e0b2}".to_string(),
             timezone_offset: 0,
             use_system_theme: false,
         };
@@ -428,28 +485,13 @@ impl HudConfig {
             hud.format_right = v.clone();
         }
         if let Some(v) = config.get("separator") {
-            hud.separator = v.clone();
+            hud.separator = SeparatorPreset::from_str(v);
         }
         if let Some(v) = config.get("bar") {
             hud.bar = match v.as_str() {
                 "powerline" => BarStyle::Powerline,
                 _ => BarStyle::Minimal,
             };
-        }
-        // separator_left/right: if only left is set, right falls back to left's value.
-        match (config.get("separator_left"), config.get("separator_right")) {
-            (Some(l), Some(r)) => {
-                hud.separator_left = l.clone();
-                hud.separator_right = r.clone();
-            }
-            (Some(l), None) => {
-                hud.separator_left = l.clone();
-                hud.separator_right = l.clone();
-            }
-            (None, Some(r)) => {
-                hud.separator_right = r.clone();
-            }
-            (None, None) => {}
         }
         if let Some(v) = config.get("enable_status_bar") {
             hud.enable_status_bar = v != "false";
