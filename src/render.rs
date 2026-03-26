@@ -27,12 +27,12 @@ impl State {
 
         match placeholder {
             "{session}" => {
-                format!("{}󰆍 {}{reset}", c.color_session, self.session_name)
+                format!("{}󰆍 {}{reset}", c.color_session.fg(), self.session_name)
             }
             "{mode}" => {
                 format!(
                     "{}{} {}{reset}",
-                    c.color_for_mode(self.mode),
+                    c.color_for_mode(self.mode).fg(),
                     self.mode_icon(),
                     format!("{:?}", self.mode).to_uppercase(),
                 )
@@ -41,49 +41,38 @@ impl State {
                 let mut out = String::new();
                 for tab in &self.tabs {
                     if tab.active {
-                        out.push_str(&format!("{} {} {reset}", c.color_tab_active, tab.name));
+                        out.push_str(&format!("{} {} {reset}", c.color_tab_active.fg(), tab.name));
                     } else {
                         out.push_str(&format!(
                             "{} {} {reset}",
-                            c.color_tab_inactive, tab.name
+                            c.color_tab_inactive.fg(), tab.name
                         ));
                     }
                 }
                 out
             }
             "{cwd}" => {
-                format!("{}󰉖 {}{reset}", c.color_cwd, self.format_cwd())
+                format!("{}󰉖 {}{reset}", c.color_cwd.fg(), self.format_cwd())
             }
             "{date}" => {
-                format!("{}󰃭 {}{reset}", c.color_date, self.format_date())
+                format!("{}󰃭 {}{reset}", c.color_date.fg(), self.format_date())
             }
             "{time}" => {
-                format!("{}󰥔 {}{reset}", c.color_time, self.format_time())
+                format!("{}󰥔 {}{reset}", c.color_time.fg(), self.format_time())
             }
             "{memory}" => {
                 if self.memory_text.is_empty() {
                     String::new()
                 } else {
-                    format!("{}󰍛 {}{reset}", c.color_memory, self.memory_text)
+                    format!("{}󰍛 {}{reset}", c.color_memory.fg(), self.memory_text)
                 }
             }
             _ => String::new(),
         }
     }
 
-    /// Convert fg ANSI escape to bg ANSI escape.
-    /// e.g. `\x1b[38;2;R;G;Bm` → `\x1b[48;2;R;G;Bm`
-    fn fg_to_bg(ansi: &str) -> String {
-        ansi.replace("\x1b[38;", "\x1b[48;")
-    }
-
-    /// Convert bg ANSI escape to fg ANSI escape.
-    fn bg_to_fg(ansi: &str) -> String {
-        ansi.replace("\x1b[48;", "\x1b[38;")
-    }
-
-    /// The segment's representative color (as fg ANSI). Used as bg in powerline mode.
-    fn segment_color(&self, placeholder: &str) -> &str {
+    /// The segment's representative color. Used as bg in powerline mode.
+    fn segment_color(&self, placeholder: &str) -> &crate::config::Color {
         let c = &self.hud_config;
         match placeholder {
             "{session}" => &c.color_session,
@@ -137,8 +126,8 @@ impl State {
     /// Right area: ... [prev_bg][seg_fg]◀[seg_bg][text_fg] content
     pub(crate) fn render_hud_powerline(&self, cols: usize) {
         let c = &self.hud_config;
-        let hud_bg = &c.color_bg;
-        let text_fg = Self::bg_to_fg(hud_bg);
+        let hud_bg = c.color_bg.bg();
+        let text_fg = c.color_bg.fg();
         let reset = "\x1b[0m";
         let sep_left = &c.separator_left;
         let sep_right = &c.separator_right;
@@ -155,13 +144,14 @@ impl State {
         // Build left area
         let mut left = String::new();
         for (i, &seg) in left_segs.iter().enumerate() {
-            let seg_fg = self.segment_color(seg);
-            let seg_bg = Self::fg_to_bg(seg_fg);
+            let seg_color = self.segment_color(seg);
+            let seg_fg = seg_color.fg();
+            let seg_bg = seg_color.bg();
             let content = self.segment_powerline_text(seg);
             left.push_str(&format!("{seg_bg}{text_fg} {content} "));
             // Arrow: fg = this segment's color, bg = next segment's color (or hud_bg)
             let next_bg = if i + 1 < left_segs.len() {
-                Self::fg_to_bg(self.segment_color(left_segs[i + 1]))
+                self.segment_color(left_segs[i + 1]).bg()
             } else {
                 hud_bg.clone()
             };
@@ -171,14 +161,15 @@ impl State {
         // Build right area
         let mut right = String::new();
         for (i, &seg) in right_segs.iter().enumerate() {
-            let seg_fg = self.segment_color(seg);
-            let seg_bg = Self::fg_to_bg(seg_fg);
+            let seg_color = self.segment_color(seg);
+            let seg_fg = seg_color.fg();
+            let seg_bg = seg_color.bg();
             let content = self.segment_powerline_text(seg);
             // Arrow: fg = this segment's color, bg = previous area's color (hud_bg or prev seg)
             let prev_bg = if i == 0 {
                 hud_bg.clone()
             } else {
-                Self::fg_to_bg(self.segment_color(right_segs[i - 1]))
+                self.segment_color(right_segs[i - 1]).bg()
             };
             right.push_str(&format!("{reset}{prev_bg}{seg_fg}{sep_right}"));
             right.push_str(&format!("{seg_bg}{text_fg} {content} "));
@@ -195,7 +186,7 @@ impl State {
     pub(crate) fn render_format(&self, format_str: &str) -> String {
         let c = &self.hud_config;
         let reset = "\x1b[0m";
-        let sep = format!("{}{}{reset}", c.color_separator, c.separator);
+        let sep = format!("{}{}{reset}", c.color_separator.fg(), c.separator);
 
         let parts: Vec<&str> = format_str.split(" | ").collect();
         let mut out = String::new();

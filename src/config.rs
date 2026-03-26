@@ -2,15 +2,54 @@ use std::collections::{BTreeMap, HashMap};
 
 use zellij_tile::prelude::{InputMode, PaletteColor, Styling};
 
-/// Which mode is considered the "home" mode where HUD hides.
-#[derive(Clone, Copy, PartialEq)]
-pub(crate) enum BaseMode {
-    /// Auto-detect from keybindings.
-    Auto,
-    /// Lock-centric: HUD hides in Locked mode.
-    Locked,
-    /// Normal-centric: HUD hides in Normal mode.
-    Normal,
+/// RGB or 8-bit terminal color, used throughout the HUD for fg and bg rendering.
+#[derive(Clone, Default)]
+pub(crate) enum Color {
+    #[default]
+    None,
+    Rgb(u8, u8, u8),
+    EightBit(u8),
+}
+
+impl Color {
+    /// ANSI foreground escape sequence.
+    pub(crate) fn fg(&self) -> String {
+        match self {
+            Color::None => String::new(),
+            Color::Rgb(r, g, b) => format!("\x1b[38;2;{};{};{}m", r, g, b),
+            Color::EightBit(n) => format!("\x1b[38;5;{}m", n),
+        }
+    }
+    /// ANSI background escape sequence.
+    pub(crate) fn bg(&self) -> String {
+        match self {
+            Color::None => String::new(),
+            Color::Rgb(r, g, b) => format!("\x1b[48;2;{};{};{}m", r, g, b),
+            Color::EightBit(n) => format!("\x1b[48;5;{}m", n),
+        }
+    }
+    /// Parse from `#RRGGBB` hex or `8bit:N` string.
+    fn from_hex(hex: &str) -> Option<Self> {
+        if let Some(n) = hex.strip_prefix("8bit:") {
+            return Some(Color::EightBit(n.parse().ok()?));
+        }
+        let hex = hex.strip_prefix('#').unwrap_or(hex);
+        if hex.len() != 6 { return None; }
+        let r = u8::from_str_radix(&hex[0..2], 16).ok()?;
+        let g = u8::from_str_radix(&hex[2..4], 16).ok()?;
+        let b = u8::from_str_radix(&hex[4..6], 16).ok()?;
+        Some(Color::Rgb(r, g, b))
+    }
+}
+
+/// Rendering style for the HUD status bar.
+#[derive(Clone, Copy, PartialEq, Default)]
+pub(crate) enum BarStyle {
+    /// Flat separators with a single background color (default).
+    #[default]
+    Minimal,
+    /// Each segment has its own background color with Powerline arrow separators.
+    Powerline,
 }
 
 /// 10-color palette used to derive all UI colors.
@@ -146,7 +185,7 @@ fn dim_color(color: PaletteColor) -> PaletteColor {
     }
 }
 
-/// Convert a `PaletteColor` to a string usable by `hex_to_fg`.
+/// Convert a `PaletteColor` to a hex string usable by `Color::from_hex`.
 /// Rgb → "#rrggbb", EightBit → "8bit:N".
 fn palette_color_to_hex(color: PaletteColor) -> String {
     match color {
@@ -174,29 +213,30 @@ impl Default for ThemePalette {
 
 /// ANSI color escapes for icon categories in the tooltip.
 pub(crate) struct IconColors {
-    pub(crate) navigation: String,
-    pub(crate) create: String,
-    pub(crate) close: String,
-    pub(crate) resize: String,
-    pub(crate) toggle: String,
-    pub(crate) search: String,
-    pub(crate) mode_switch: String,
-    pub(crate) plugin: String,
-    pub(crate) dim: String,
+    pub(crate) navigation: Color,
+    pub(crate) create: Color,
+    pub(crate) close: Color,
+    pub(crate) resize: Color,
+    pub(crate) toggle: Color,
+    pub(crate) search: Color,
+    pub(crate) mode_switch: Color,
+    pub(crate) plugin: Color,
+    pub(crate) dim: Color,
 }
 
 impl IconColors {
     fn from_palette(p: &ThemePalette) -> Self {
+        let c = |hex: &str| Color::from_hex(hex).unwrap_or_default();
         Self {
-            navigation: HudConfig::hex_to_fg(&p.cyan).unwrap_or_default(),
-            create: HudConfig::hex_to_fg(&p.green).unwrap_or_default(),
-            close: HudConfig::hex_to_fg(&p.red).unwrap_or_default(),
-            resize: HudConfig::hex_to_fg(&p.orange).unwrap_or_default(),
-            toggle: HudConfig::hex_to_fg(&p.yellow).unwrap_or_default(),
-            search: HudConfig::hex_to_fg(&p.magenta).unwrap_or_default(),
-            mode_switch: HudConfig::hex_to_fg(&p.blue).unwrap_or_default(),
-            plugin: HudConfig::hex_to_fg(&p.fg).unwrap_or_default(),
-            dim: HudConfig::hex_to_fg(&p.dim).unwrap_or_default(),
+            navigation: c(&p.cyan),
+            create: c(&p.green),
+            close: c(&p.red),
+            resize: c(&p.orange),
+            toggle: c(&p.yellow),
+            search: c(&p.magenta),
+            mode_switch: c(&p.blue),
+            plugin: c(&p.fg),
+            dim: c(&p.dim),
         }
     }
 }
@@ -204,28 +244,28 @@ impl IconColors {
 pub(crate) struct HudConfig {
     pub(crate) format_left: String,
     pub(crate) format_right: String,
-    pub(crate) color_bg: String,
-    pub(crate) color_session: String,
-    pub(crate) color_mode: String,
-    pub(crate) mode_colors: HashMap<InputMode, String>,
-    pub(crate) color_tab_active: String,
-    pub(crate) color_tab_inactive: String,
-    pub(crate) color_cwd: String,
-    pub(crate) color_date: String,
-    pub(crate) color_time: String,
-    pub(crate) color_memory: String,
-    pub(crate) color_separator: String,
-    pub(crate) color_tooltip_key: String,
-    pub(crate) color_tooltip_arrow: String,
-    pub(crate) color_tooltip_action: String,
-    pub(crate) color_tooltip_mode: String,
+    pub(crate) color_bg: Color,
+    pub(crate) color_session: Color,
+    pub(crate) color_mode: Color,
+    pub(crate) mode_colors: HashMap<InputMode, Color>,
+    pub(crate) color_tab_active: Color,
+    pub(crate) color_tab_inactive: Color,
+    pub(crate) color_cwd: Color,
+    pub(crate) color_date: Color,
+    pub(crate) color_time: Color,
+    pub(crate) color_memory: Color,
+    pub(crate) color_separator: Color,
+    pub(crate) color_tooltip_key: Color,
+    pub(crate) color_tooltip_arrow: Color,
+    pub(crate) color_tooltip_action: Color,
+    pub(crate) color_tooltip_mode: Color,
     pub(crate) icon_colors: IconColors,
     pub(crate) enable_status_bar: bool,
     pub(crate) enable_tooltip: bool,
-    pub(crate) base_mode: BaseMode,
     pub(crate) separator: String,
     /// Powerline mode: each segment gets its own background color with arrow separators.
-    pub(crate) powerline: bool,
+    /// HUD rendering style (minimal or powerline).
+    pub(crate) bar: BarStyle,
     /// Separator arrow for the left area (powerline mode only).
     pub(crate) separator_left: String,
     /// Separator arrow for the right area (powerline mode only).
@@ -281,23 +321,23 @@ impl HudConfig {
     }
 
     fn build_from_palette(palette: &ThemePalette, config: &BTreeMap<String, String>) -> Self {
-        let fg = |hex: &str| Self::hex_to_fg(hex).unwrap_or_default();
+        let color = |hex: &str| Color::from_hex(hex).unwrap_or_default();
 
         let mode_colors = HashMap::from([
-            (InputMode::Normal, fg(&palette.green)),
-            (InputMode::Locked, fg(&palette.dim)),
-            (InputMode::Pane, fg(&palette.orange)),
-            (InputMode::Tab, fg(&palette.yellow)),
-            (InputMode::Resize, fg(&palette.red)),
-            (InputMode::Move, fg(&palette.magenta)),
-            (InputMode::Scroll, fg(&palette.cyan)),
-            (InputMode::Session, fg(&palette.magenta)),
-            (InputMode::Search, fg(&palette.yellow)),
-            (InputMode::RenameTab, fg(&palette.yellow)),
-            (InputMode::RenamePane, fg(&palette.yellow)),
-            (InputMode::EnterSearch, fg(&palette.yellow)),
-            (InputMode::Tmux, fg(&palette.orange)),
-            (InputMode::Prompt, fg(&palette.blue)),
+            (InputMode::Normal, color(&palette.green)),
+            (InputMode::Locked, color(&palette.dim)),
+            (InputMode::Pane, color(&palette.orange)),
+            (InputMode::Tab, color(&palette.yellow)),
+            (InputMode::Resize, color(&palette.red)),
+            (InputMode::Move, color(&palette.magenta)),
+            (InputMode::Scroll, color(&palette.cyan)),
+            (InputMode::Session, color(&palette.magenta)),
+            (InputMode::Search, color(&palette.yellow)),
+            (InputMode::RenameTab, color(&palette.yellow)),
+            (InputMode::RenamePane, color(&palette.yellow)),
+            (InputMode::EnterSearch, color(&palette.yellow)),
+            (InputMode::Tmux, color(&palette.orange)),
+            (InputMode::Prompt, color(&palette.blue)),
         ]);
 
         let icon_colors = IconColors::from_palette(palette);
@@ -305,27 +345,26 @@ impl HudConfig {
         let mut hud = Self {
             format_left: "{session} | {mode} | {tabs}".to_string(),
             format_right: "{cwd} | {memory} | {date} | {time}".to_string(),
-            color_bg: Self::hex_to_bg(&palette.bg).unwrap_or_default(),
-            color_session: fg(&palette.cyan),
-            color_mode: fg(&palette.blue),
+            color_bg: color(&palette.bg),
+            color_session: color(&palette.cyan),
+            color_mode: color(&palette.blue),
             mode_colors,
-            color_tab_active: fg(&palette.fg),
-            color_tab_inactive: fg(&palette.dim),
-            color_cwd: fg(&palette.cyan),
-            color_date: fg(&palette.magenta),
-            color_time: fg(&palette.blue),
-            color_memory: fg(&palette.green),
-            color_separator: fg(&palette.dim),
-            color_tooltip_key: fg(&palette.cyan),
-            color_tooltip_arrow: fg(&palette.dim),
-            color_tooltip_action: fg(&palette.magenta),
-            color_tooltip_mode: fg(&palette.blue),
+            color_tab_active: color(&palette.fg),
+            color_tab_inactive: color(&palette.dim),
+            color_cwd: color(&palette.cyan),
+            color_date: color(&palette.magenta),
+            color_time: color(&palette.blue),
+            color_memory: color(&palette.green),
+            color_separator: color(&palette.dim),
+            color_tooltip_key: color(&palette.cyan),
+            color_tooltip_arrow: color(&palette.dim),
+            color_tooltip_action: color(&palette.magenta),
+            color_tooltip_mode: color(&palette.blue),
             icon_colors,
             enable_status_bar: true,
             enable_tooltip: true,
-            base_mode: BaseMode::Auto,
             separator: "│".to_string(),
-            powerline: false,
+            bar: BarStyle::Minimal,
             separator_left: "\u{e0b0}".to_string(),
             separator_right: "\u{e0b2}".to_string(),
             timezone_offset: 0,
@@ -333,33 +372,29 @@ impl HudConfig {
         };
 
         // Apply color_* overrides (hex or palette name)
-        macro_rules! color_fg {
+        macro_rules! color_override {
             ($key:expr, $field:expr) => {
                 if let Some(v) = config.get($key) {
-                    if let Some(c) = Self::resolve_fg(v, palette) {
+                    if let Some(c) = Self::resolve_color(v, palette) {
                         $field = c;
                     }
                 }
             };
         }
-        if let Some(v) = config.get("color_bg") {
-            if let Some(c) = Self::resolve_bg(v, palette) {
-                hud.color_bg = c;
-            }
-        }
-        color_fg!("color_session", hud.color_session);
-        color_fg!("color_mode", hud.color_mode);
-        color_fg!("color_tab_active", hud.color_tab_active);
-        color_fg!("color_tab_inactive", hud.color_tab_inactive);
-        color_fg!("color_cwd", hud.color_cwd);
-        color_fg!("color_date", hud.color_date);
-        color_fg!("color_time", hud.color_time);
-        color_fg!("color_memory", hud.color_memory);
-        color_fg!("color_separator", hud.color_separator);
-        color_fg!("color_tooltip_key", hud.color_tooltip_key);
-        color_fg!("color_tooltip_arrow", hud.color_tooltip_arrow);
-        color_fg!("color_tooltip_action", hud.color_tooltip_action);
-        color_fg!("color_tooltip_mode", hud.color_tooltip_mode);
+        color_override!("color_bg", hud.color_bg);
+        color_override!("color_session", hud.color_session);
+        color_override!("color_mode", hud.color_mode);
+        color_override!("color_tab_active", hud.color_tab_active);
+        color_override!("color_tab_inactive", hud.color_tab_inactive);
+        color_override!("color_cwd", hud.color_cwd);
+        color_override!("color_date", hud.color_date);
+        color_override!("color_time", hud.color_time);
+        color_override!("color_memory", hud.color_memory);
+        color_override!("color_separator", hud.color_separator);
+        color_override!("color_tooltip_key", hud.color_tooltip_key);
+        color_override!("color_tooltip_arrow", hud.color_tooltip_arrow);
+        color_override!("color_tooltip_action", hud.color_tooltip_action);
+        color_override!("color_tooltip_mode", hud.color_tooltip_mode);
 
         // color_mode_* overrides
         let mode_map = [
@@ -380,7 +415,7 @@ impl HudConfig {
         ];
         for (key, mode) in &mode_map {
             if let Some(v) = config.get(*key) {
-                if let Some(c) = Self::resolve_fg(v, palette) {
+                if let Some(c) = Self::resolve_color(v, palette) {
                     hud.mode_colors.insert(*mode, c);
                 }
             }
@@ -395,8 +430,11 @@ impl HudConfig {
         if let Some(v) = config.get("separator") {
             hud.separator = v.clone();
         }
-        if let Some(v) = config.get("powerline") {
-            hud.powerline = v != "false";
+        if let Some(v) = config.get("bar") {
+            hud.bar = match v.as_str() {
+                "powerline" => BarStyle::Powerline,
+                _ => BarStyle::Minimal,
+            };
         }
         // separator_left/right: if only left is set, right falls back to left's value.
         match (config.get("separator_left"), config.get("separator_right")) {
@@ -413,72 +451,24 @@ impl HudConfig {
             }
             (None, None) => {}
         }
-        if let Some(v) = config.get("timezone") {
-            if let Ok(n) = v.parse::<i64>() {
-                hud.timezone_offset = n;
-            }
-        }
         if let Some(v) = config.get("enable_status_bar") {
             hud.enable_status_bar = v != "false";
         }
         if let Some(v) = config.get("enable_tooltip") {
             hud.enable_tooltip = v != "false";
         }
-        if let Some(v) = config.get("base_mode") {
-            hud.base_mode = match v.as_str() {
-                "locked" => BaseMode::Locked,
-                "normal" => BaseMode::Normal,
-                _ => BaseMode::Auto,
-            };
-        }
 
         hud
     }
 
-    pub(crate) fn color_for_mode(&self, mode: InputMode) -> &str {
-        self.mode_colors
-            .get(&mode)
-            .map_or(&self.color_mode, |c| c.as_str())
+    pub(crate) fn color_for_mode(&self, mode: InputMode) -> &Color {
+        self.mode_colors.get(&mode).unwrap_or(&self.color_mode)
     }
 
-    /// Resolve a value as palette name or hex, then convert to fg ANSI.
-    fn resolve_fg(value: &str, palette: &ThemePalette) -> Option<String> {
+    /// Resolve a palette name or hex string into a `Color`.
+    fn resolve_color(value: &str, palette: &ThemePalette) -> Option<Color> {
         let hex = palette.resolve(value).unwrap_or(value);
-        Self::hex_to_fg(hex)
-    }
-
-    fn resolve_bg(value: &str, palette: &ThemePalette) -> Option<String> {
-        let hex = palette.resolve(value).unwrap_or(value);
-        Self::hex_to_bg(hex)
-    }
-
-    fn hex_to_bg(hex: &str) -> Option<String> {
-        if let Some(n) = hex.strip_prefix("8bit:") {
-            let n: u8 = n.parse().ok()?;
-            return Some(format!("\x1b[48;5;{}m", n));
-        }
-        let (r, g, b) = Self::parse_hex(hex)?;
-        Some(format!("\x1b[48;2;{};{};{}m", r, g, b))
-    }
-
-    pub(crate) fn hex_to_fg(hex: &str) -> Option<String> {
-        if let Some(n) = hex.strip_prefix("8bit:") {
-            let n: u8 = n.parse().ok()?;
-            return Some(format!("\x1b[38;5;{}m", n));
-        }
-        let (r, g, b) = Self::parse_hex(hex)?;
-        Some(format!("\x1b[38;2;{};{};{}m", r, g, b))
-    }
-
-    fn parse_hex(hex: &str) -> Option<(u8, u8, u8)> {
-        let hex = hex.strip_prefix('#').unwrap_or(hex);
-        if hex.len() != 6 {
-            return None;
-        }
-        let r = u8::from_str_radix(&hex[0..2], 16).ok()?;
-        let g = u8::from_str_radix(&hex[2..4], 16).ok()?;
-        let b = u8::from_str_radix(&hex[4..6], 16).ok()?;
-        Some((r, g, b))
+        Color::from_hex(hex)
     }
 }
 

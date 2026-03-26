@@ -1,8 +1,6 @@
 use zellij_tile::prelude::actions::Action;
 use zellij_tile::prelude::*;
 
-use crate::config::IconColors;
-
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub(crate) enum ActionType {
     MoveFocus,
@@ -133,8 +131,8 @@ impl ActionType {
         }
     }
 
-    /// ANSI color escape for the icon, derived from the theme palette.
-    pub(crate) fn icon_color<'a>(&self, colors: &'a IconColors) -> &'a str {
+    /// Color for the icon, derived from the theme palette.
+    pub(crate) fn icon_color<'a>(&self, colors: &'a crate::config::IconColors) -> &'a crate::config::Color {
         match self {
             ActionType::SwitchToMode(_) => &colors.mode_switch,
             ActionType::MoveFocus | ActionType::MovePaneWithDirection => &colors.navigation,

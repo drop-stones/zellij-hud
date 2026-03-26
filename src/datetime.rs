@@ -5,11 +5,10 @@ use crate::State;
 impl State {
     pub(crate) fn format_time(&self) -> String {
         if let Ok(dur) = SystemTime::now().duration_since(UNIX_EPOCH) {
-            let total_secs = dur.as_secs();
-            let offset = self.hud_config.timezone_offset;
-            let adjusted = (total_secs as i64 + offset * 3600).rem_euclid(86400);
-            let hours = adjusted / 3600;
-            let mins = (adjusted % 3600) / 60;
+            let secs = dur.as_secs() as i64 + self.hud_config.timezone_offset;
+            let secs_of_day = secs.rem_euclid(86400);
+            let hours = secs_of_day / 3600;
+            let mins = (secs_of_day % 3600) / 60;
             format!("{:02}:{:02}", hours, mins)
         } else {
             "--:--".to_string()
@@ -18,9 +17,7 @@ impl State {
 
     pub(crate) fn format_date(&self) -> String {
         if let Ok(dur) = SystemTime::now().duration_since(UNIX_EPOCH) {
-            let offset = self.hud_config.timezone_offset;
-            let adjusted_secs = dur.as_secs() as i64 + offset * 3600;
-            let days = adjusted_secs.div_euclid(86400);
+            let days = (dur.as_secs() as i64 + self.hud_config.timezone_offset).div_euclid(86400);
 
             let (_year, month, day) = days_to_ymd(days);
             let month_name = match month {

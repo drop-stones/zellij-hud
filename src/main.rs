@@ -13,7 +13,7 @@ use std::collections::BTreeMap;
 use std::path::PathBuf;
 
 use commands::{CMD_CONTEXT_MEM, CMD_CONTEXT_TZ, MEM_UPDATE_INTERVAL};
-use config::{BaseMode, HudConfig};
+use config::{BarStyle, HudConfig};
 use render::visible_len;
 
 pub(crate) const CONFIG_IS_HUD: &str = "is_hud";
@@ -72,8 +72,6 @@ pub(crate) struct State {
     pub(crate) enable_status_bar: bool,
     /// Whether the tooltip is enabled
     pub(crate) enable_tooltip: bool,
-    /// Base mode config setting (override for ModeInfo::base_mode)
-    pub(crate) base_mode_config: BaseMode,
     /// Formatted memory usage string
     pub(crate) memory_text: String,
     /// Timer tick counter for throttling memory updates
@@ -108,7 +106,6 @@ impl Default for State {
             hud_config: HudConfig::default(),
             enable_status_bar: true,
             enable_tooltip: true,
-            base_mode_config: BaseMode::Auto,
             memory_text: String::new(),
             timer_count: 0,
         }
@@ -118,20 +115,10 @@ impl Default for State {
 impl State {
     /// Resolve the base mode from ModeInfo or config override.
     fn resolve_base_mode(&self) -> InputMode {
-        // Explicit config override takes priority
-        let config_base = match self.role {
-            Role::Daemon => self.base_mode_config,
-            Role::Hud | Role::Tooltip => self.hud_config.base_mode,
-        };
-        match config_base {
-            BaseMode::Locked => InputMode::Locked,
-            BaseMode::Normal => InputMode::Normal,
-            BaseMode::Auto => self
-                .mode_info
-                .as_ref()
-                .and_then(|mi| mi.base_mode)
-                .unwrap_or(InputMode::Normal),
-        }
+        self.mode_info
+            .as_ref()
+            .and_then(|mi| mi.base_mode)
+            .unwrap_or(InputMode::Normal)
     }
 
     /// Broadcast this Daemon instance's current mode to all peers via pipe.
@@ -278,11 +265,6 @@ impl ZellijPlugin for State {
                     configuration.get("enable_status_bar").map_or(true, |v| v != "false");
                 self.enable_tooltip =
                     configuration.get("enable_tooltip").map_or(true, |v| v != "false");
-                self.base_mode_config = match configuration.get("base_mode").map(|s| s.as_str()) {
-                    Some("locked") => BaseMode::Locked,
-                    Some("normal") => BaseMode::Normal,
-                    _ => BaseMode::Auto,
-                };
                 self.plugin_config = configuration;
 
                 request_permission(&[
@@ -352,8 +334,6 @@ impl ZellijPlugin for State {
             Event::RunCommandResult(_exit_code, ref stdout, _stderr, ref context) => {
                 if context.contains_key(CMD_CONTEXT_TZ) {
                     if let Some(offset) = commands::parse_date_tz(stdout) {
-                        // Store timezone directly on hud_config (not plugin_config) so it
-                        // doesn't affect get_or_load_plugins config-equality matching.
                         self.hud_config.timezone_offset = offset;
                     }
                 } else if context.contains_key(CMD_CONTEXT_MEM) {
@@ -530,10 +510,10 @@ impl ZellijPlugin for State {
     fn render(&mut self, rows: usize, cols: usize) {
         match self.role {
             Role::Hud => {
-                if self.hud_config.powerline {
+                if self.hud_config.bar == BarStyle::Powerline {
                     self.render_hud_powerline(cols);
                 } else {
-                    let bg = &self.hud_config.color_bg;
+                    let bg = self.hud_config.color_bg.bg();
                     let reset = "\x1b[0m";
                     let left = format!(
                         " {}",

@@ -24,10 +24,10 @@ impl State {
 
         let c = &self.hud_config;
         let reset = "\x1b[0m";
-        let key_color = &c.color_tooltip_key;
-        let arrow_color = &c.color_tooltip_arrow;
-        let action_color = &c.color_tooltip_action;
-        let mode_color = &c.color_tooltip_mode;
+        let key_color = c.color_tooltip_key.fg();
+        let arrow_color = c.color_tooltip_arrow.fg();
+        let action_color = c.color_tooltip_action.fg();
+        let mode_color = c.color_tooltip_mode.fg();
 
         let has_common = !ma.common.is_empty();
         let main_rows = if has_common {
@@ -49,15 +49,15 @@ impl State {
             let icon = action.action_type.icon();
             let desc = &action.description;
             let desc_color = if action.action_type.is_mode_switch() {
-                mode_color
+                &mode_color
             } else {
-                action_color
+                &action_color
             };
 
             // Mode switch icon uses per-mode color from status bar
             let icon_color = match &action.action_type {
-                ActionType::SwitchToMode(m) => c.color_for_mode(*m),
-                _ => action.action_type.icon_color(&c.icon_colors),
+                ActionType::SwitchToMode(m) => c.color_for_mode(*m).fg(),
+                _ => action.action_type.icon_color(&c.icon_colors).fg(),
             };
 
             let line = format!(
@@ -79,7 +79,7 @@ impl State {
 
         // Render common (back/exit) keys centered at bottom
         if has_common && row < rows {
-            let dim = &c.color_tooltip_arrow;
+            let dim = c.color_tooltip_arrow.fg();
             // Collect icons and use the shared description
             let icons: Vec<&str> =
                 ma.common.iter().map(|c| c.icon).collect();

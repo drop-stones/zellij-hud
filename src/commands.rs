@@ -2,7 +2,7 @@ pub(crate) const CMD_CONTEXT_TZ: &str = "tz_detect";
 pub(crate) const CMD_CONTEXT_MEM: &str = "mem_usage";
 pub(crate) const MEM_UPDATE_INTERVAL: u32 = 5;
 
-/// Parse `date +%z` output (e.g. "+0900", "-0500") into hours offset.
+/// Parse `date +%z` output (e.g. "+0900", "-0500") into seconds offset.
 pub(crate) fn parse_date_tz(stdout: &[u8]) -> Option<i64> {
     let s = std::str::from_utf8(stdout).ok()?.trim();
     if s.len() < 5 {
@@ -12,7 +12,7 @@ pub(crate) fn parse_date_tz(stdout: &[u8]) -> Option<i64> {
     let digits = &s[1..];
     let hours: i64 = digits[..2].parse().ok()?;
     let mins: i64 = digits[2..4].parse().ok()?;
-    Some(sign * hours + if mins > 0 { sign } else { 0 })
+    Some(sign * (hours * 3600 + mins * 60))
 }
 
 /// Parse `free -b` output into (used_bytes, total_bytes).
