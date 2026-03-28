@@ -135,7 +135,7 @@ impl StyleDefaults {
             // "minimal" (default): flat look, single bar bg, fg-only widgets, pipe separators
             _ => Self {
                 format_left: "{mode} | {session} | {tabs}",
-                format_right: "{cwd} | {command_git_branch} | {time}",
+                format_right: "{cwd} | {git_branch} | {memory} | {time}",
                 separator: SeparatorPreset::Pipe,
                 bar_bg: "bg",
                 separator_color: "dim",
