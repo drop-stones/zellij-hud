@@ -72,16 +72,6 @@ impl WidgetStyle {
     }
 }
 
-/// Rendering style for the HUD status bar.
-#[derive(Clone, Copy, PartialEq, Default)]
-pub(crate) enum BarStyle {
-    /// Flat separators with a single background color (default).
-    #[default]
-    Minimal,
-    /// Each segment has its own background color with Powerline arrow separators.
-    Powerline,
-}
-
 /// Named separator preset. Defines characters for both minimal and powerline modes.
 #[derive(Clone, Copy, Default)]
 pub(crate) enum SeparatorPreset {
@@ -381,8 +371,6 @@ pub(crate) struct HudConfig {
     pub(crate) enable_tooltip: bool,
     /// Named separator preset (triangle, circle, pipe, slash, backslash).
     pub(crate) separator: SeparatorPreset,
-    /// HUD rendering style (minimal or powerline).
-    pub(crate) bar: BarStyle,
     pub(crate) timezone_offset: i64,
     /// Whether to use zellij's theme colors (theme "system").
     pub(crate) use_system_theme: bool,
@@ -535,7 +523,6 @@ impl HudConfig {
             enable_status_bar: true,
             enable_tooltip: true,
             separator: SeparatorPreset::Triangle,
-            bar: BarStyle::Minimal,
             timezone_offset: 0,
             use_system_theme: false,
             mode_accent,
@@ -706,12 +693,6 @@ impl HudConfig {
         }
         if let Some(v) = config.get("separator") {
             hud.separator = SeparatorPreset::from_str(v);
-        }
-        if let Some(v) = config.get("bar") {
-            hud.bar = match v.as_str() {
-                "powerline" => BarStyle::Powerline,
-                _ => BarStyle::Minimal,
-            };
         }
         if let Some(v) = config.get("enable_status_bar") {
             hud.enable_status_bar = v != "false";

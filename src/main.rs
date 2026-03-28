@@ -13,7 +13,7 @@ use std::collections::{BTreeMap, HashMap};
 use std::path::PathBuf;
 
 use commands::{CMD_CONTEXT_MEM, CMD_CONTEXT_TZ, CMD_CONTEXT_USER, CommandOutput, MEM_UPDATE_INTERVAL};
-use config::{BarStyle, HudConfig};
+use config::HudConfig;
 use render::visible_len;
 
 pub(crate) const CONFIG_IS_HUD: &str = "is_hud";
@@ -562,7 +562,7 @@ impl ZellijPlugin for State {
         }
     }
 
-    fn render(&mut self, rows: usize, cols: usize) {
+    fn render(&mut self, _rows: usize, cols: usize) {
         match self.role {
             Role::Hud => {
                 let bg = self.hud_config.color_bg.bg();
@@ -573,16 +573,6 @@ impl ZellijPlugin for State {
                     self.render_format(&self.hud_config.format_right.clone(), true),
                 );
 
-                let left_visible = visible_len(&left);
-                let right_visible = visible_len(&right);
-                let gap = cols.saturating_sub(left_visible + right_visible);
-
-                let bg = self.hud_config.color_bg.bg();
-                let reset = "\x1b[0m";
-                let right = format!(
-                    "{} ",
-                    self.render_format(&self.hud_config.format_right.clone(), true),
-                );
                 let left_visible = visible_len(&left);
                 let right_visible = visible_len(&right);
                 let gap = cols.saturating_sub(left_visible + right_visible);
@@ -599,7 +589,7 @@ impl ZellijPlugin for State {
                 print!("{}{}", output, reset);
             }
             Role::Tooltip => {
-                self.render_tooltip(rows, cols);
+                self.render_tooltip(_rows, cols);
             }
             Role::Daemon => {}
         }
