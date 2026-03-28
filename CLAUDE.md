@@ -310,16 +310,16 @@ System theme: `bg` = `ribbon_unselected.base` (maps to `palette.black` in zellij
 
 ### Status bar customization
 
-- [ ] Implement config spec v3 (widget style keys, accent color, command/text widgets)
 - [ ] Predefined theme configs (provide good defaults for powerline and minimal styles)
 
 ### Tooltip customization
 
-- [ ] Implement tooltip config spec (colors, separator, position, border, title)
 - [ ] Multi-column layout (future: `tooltip_columns "auto"`)
 
 ### Done
 
+- [x] Implement config spec v3 (widget style keys, accent color, command/text widgets)
+- [x] Implement tooltip config spec (colors, separator, position, border, title)
 - [x] Powerline-style segments: `BarStyle::Powerline` with per-segment bg colors, arrow separators, and `SeparatorPreset` enum
 - [x] Named separator presets: `Triangle`, `Circle`, `Slant`, `Flame` with minimal/powerline variants
 - [x] Color type refactor: unified `Color` enum with `.fg()`/`.bg()` methods, replacing raw ANSI strings
