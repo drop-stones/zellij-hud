@@ -66,10 +66,6 @@ impl WidgetStyle {
         }
     }
 
-    /// Whether this widget has a background color set.
-    pub(crate) fn has_bg(&self) -> bool {
-        !self.bg.is_empty()
-    }
 }
 
 /// Named separator preset. Defines characters for both minimal and powerline modes.
@@ -111,26 +107,6 @@ impl SeparatorPreset {
             Self::Pipe      => "|",
             Self::Slash     => "\u{e0b9}",   // same direction as left
             Self::Backslash => "\u{e0bd}",   // same direction as left
-        }
-    }
-    /// Arrow character for the left area in powerline mode.
-    pub(crate) fn powerline_left(self) -> &'static str {
-        match self {
-            Self::Triangle  => "\u{e0b0}",
-            Self::Circle    => "\u{e0b4}",
-            Self::Pipe      => "\u{258c}", // LEFT HALF BLOCK ▌
-            Self::Slash     => "\u{e0b8}",
-            Self::Backslash => "\u{e0bc}",
-        }
-    }
-    /// Arrow character for the right area in powerline mode.
-    pub(crate) fn powerline_right(self) -> &'static str {
-        match self {
-            Self::Triangle  => "\u{e0b2}",
-            Self::Circle    => "\u{e0b6}",
-            Self::Pipe      => "\u{2590}", // RIGHT HALF BLOCK ▐
-            Self::Slash     => "\u{e0be}",
-            Self::Backslash => "\u{e0ba}",
         }
     }
 }
