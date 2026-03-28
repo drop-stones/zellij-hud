@@ -109,6 +109,26 @@ impl SeparatorPreset {
             Self::Backslash => "\u{e0bd}",   // same direction as left
         }
     }
+    /// Thick (filled) separator pointing right (left area, powerline mode).
+    pub(crate) fn powerline_left(self) -> &'static str {
+        match self {
+            Self::Triangle  => "\u{e0b0}",
+            Self::Circle    => "\u{e0b4}",
+            Self::Pipe      => "|",
+            Self::Slash     => "\u{e0b8}",
+            Self::Backslash => "\u{e0bc}",
+        }
+    }
+    /// Thick (filled) separator pointing left (right area, powerline mode).
+    pub(crate) fn powerline_right(self) -> &'static str {
+        match self {
+            Self::Triangle  => "\u{e0b2}",
+            Self::Circle    => "\u{e0b6}",
+            Self::Pipe      => "|",
+            Self::Slash     => "\u{e0ba}",
+            Self::Backslash => "\u{e0be}",
+        }
+    }
 }
 
 /// Style preset for the status bar and tooltip.
@@ -127,11 +147,33 @@ struct StyleDefaults {
     date_style: (&'static str, &'static str, &'static str),
     time_style: (&'static str, &'static str, &'static str),
     memory_style: (&'static str, &'static str, &'static str),
+    git_branch_style: (&'static str, &'static str, &'static str),
 }
 
 impl StyleDefaults {
     fn from_name(name: &str) -> Self {
         match name {
+            "powerline" => Self {
+                format_left: "{mode}{session}{tabs}",
+                format_right: "{cwd}{git_branch}{memory}{time}",
+                separator: SeparatorPreset::Triangle,
+                bar_bg: "bg",
+                separator_color: "",
+                // Outermost: inverted accent
+                mode_style: ("bg", "accent", "bold"),
+                // Next layer: dim bg, accent fg
+                session_style: ("accent", "dim", ""),
+                // Inner: both tabs have bg for powerline separator transitions
+                tab_active_style: ("fg", "#484848", "bold"),
+                tab_inactive_style: ("dim", "#282828", ""),
+                cwd_style: ("cyan", "", ""),
+                git_branch_style: ("orange", "", ""),
+                // Next layer (right): dim bg, accent fg
+                memory_style: ("accent", "dim", ""),
+                // Outermost (right): inverted accent
+                date_style: ("bg", "accent", ""),
+                time_style: ("bg", "accent", ""),
+            },
             // "minimal" (default): flat look, single bar bg, fg-only widgets, pipe separators
             _ => Self {
                 format_left: "{mode} | {session} | {tabs}",
@@ -147,6 +189,7 @@ impl StyleDefaults {
                 date_style: ("magenta", "", ""),
                 time_style: ("blue", "", ""),
                 memory_style: ("green", "", ""),
+                git_branch_style: ("orange", "", ""),
             },
         }
     }
@@ -685,7 +728,7 @@ impl HudConfig {
             }),
             ("git_branch", CommandWidget {
                 command: "git rev-parse --abbrev-ref HEAD 2>/dev/null".to_string(),
-                style: WidgetStyle::new("orange", "", "", ""),
+                style: WidgetStyle::new(sd.git_branch_style.0, sd.git_branch_style.1, sd.git_branch_style.2, ""),
                 format: "\u{e0a0} {stdout}".to_string(),
                 interval: 10,
             }),

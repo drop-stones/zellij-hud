@@ -590,18 +590,14 @@ impl ZellijPlugin for State {
                 let bg = c.resolve_color_with_accent(&c.bar_bg, &c.palette, self.mode).bg();
                 let reset = "\x1b[0m";
                 let left = self.render_format(&self.hud_config.format_left.clone(), false);
-                let right = format!(
-                    "{} ",
-                    self.render_format(&self.hud_config.format_right.clone(), true),
-                );
+                let right = self.render_format(&self.hud_config.format_right.clone(), true);
 
-                let left_visible = 1 + visible_len(&left); // 1 for left padding
+                let left_visible = visible_len(&left);
                 let right_visible = visible_len(&right);
                 let gap = cols.saturating_sub(left_visible + right_visible);
 
                 let mut output = String::new();
                 output.push_str(&bg);
-                output.push(' ');
                 output.push_str(&left);
                 output.push_str(&" ".repeat(gap));
                 output.push_str(&right);
