@@ -146,6 +146,8 @@ impl SeparatorPreset {
 }
 
 /// 10-color palette used to derive all UI colors.
+/// Stored in HudConfig for runtime color resolution (accent, palette names).
+#[derive(Clone)]
 pub(crate) struct ThemePalette {
     pub(crate) fg: String,
     pub(crate) bg: String,
@@ -419,6 +421,9 @@ pub(crate) struct HudConfig {
     pub(crate) command_widgets: HashMap<String, CommandWidget>,
     /// User-defined text widgets, keyed by name.
     pub(crate) text_widgets: HashMap<String, TextWidget>,
+
+    /// Theme palette for runtime color resolution (accent, palette names).
+    pub(crate) palette: ThemePalette,
 }
 
 impl HudConfig {
@@ -464,6 +469,7 @@ impl HudConfig {
         self.color_tooltip_action = rebuilt.color_tooltip_action;
         self.color_tooltip_mode = rebuilt.color_tooltip_mode;
         self.icon_colors = rebuilt.icon_colors;
+        self.palette = rebuilt.palette;
         // mode_accent values are palette names, not resolved colors,
         // so they don't need rebuilding on theme change.
     }
@@ -563,6 +569,7 @@ impl HudConfig {
             tabs_separator: String::new(),
             command_widgets: HashMap::new(),
             text_widgets: HashMap::new(),
+            palette: palette.clone(),
         };
 
         // Apply color_* overrides (hex or palette name)

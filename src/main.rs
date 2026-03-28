@@ -565,30 +565,38 @@ impl ZellijPlugin for State {
     fn render(&mut self, rows: usize, cols: usize) {
         match self.role {
             Role::Hud => {
-                if self.hud_config.bar == BarStyle::Powerline {
-                    self.render_hud_powerline(cols);
-                } else {
-                    let bg = self.hud_config.color_bg.bg();
-                    let reset = "\x1b[0m";
-                    let left = format!(
-                        " {}",
-                        self.render_format(&self.hud_config.format_left.clone(), false)
-                    );
-                    let right = format!(
-                        "{} ",
-                        self.render_format(&self.hud_config.format_right.clone(), true),
-                    );
+                let bg = self.hud_config.color_bg.bg();
+                let reset = "\x1b[0m";
+                let left = self.render_format(&self.hud_config.format_left.clone(), false);
+                let right = format!(
+                    "{} ",
+                    self.render_format(&self.hud_config.format_right.clone(), true),
+                );
 
-                    let left_visible = visible_len(&left);
-                    let right_visible = visible_len(&right);
-                    let gap = cols.saturating_sub(left_visible + right_visible);
+                let left_visible = visible_len(&left);
+                let right_visible = visible_len(&right);
+                let gap = cols.saturating_sub(left_visible + right_visible);
 
-                    // Replace full resets with reset+bg so background color persists
-                    // across segment boundaries.
-                    let content = format!("{}{}{}", left, " ".repeat(gap), right);
-                    let content = content.replace("\x1b[0m", &format!("\x1b[0m{bg}"));
-                    print!("{bg}{content}{reset}");
-                }
+                let bg = self.hud_config.color_bg.bg();
+                let reset = "\x1b[0m";
+                let right = format!(
+                    "{} ",
+                    self.render_format(&self.hud_config.format_right.clone(), true),
+                );
+                let left_visible = visible_len(&left);
+                let right_visible = visible_len(&right);
+                let gap = cols.saturating_sub(left_visible + right_visible);
+
+                let mut output = String::new();
+                output.push_str(&bg);
+                output.push_str(&left);
+                output.push_str(&" ".repeat(gap));
+                output.push_str(&right);
+                output.push_str(reset);
+                // Replace resets with reset+bg to maintain background
+                let output = output.replace("\x1b[0m", &format!("\x1b[0m{bg}"));
+                // Final reset at the very end
+                print!("{}{}", output, reset);
             }
             Role::Tooltip => {
                 self.render_tooltip(rows, cols);
