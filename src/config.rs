@@ -42,6 +42,36 @@ impl Color {
     }
 }
 
+/// Per-widget style (v3 config). Color values are stored as raw strings
+/// (palette names, hex, or "accent") and resolved at render time.
+#[derive(Clone, Default)]
+pub(crate) struct WidgetStyle {
+    /// Foreground color: palette name, hex, or "accent".
+    pub(crate) fg: String,
+    /// Background color: palette name, hex, or "accent". Empty = no bg.
+    pub(crate) bg: String,
+    /// Text decorations: "bold", "italic", "bold,italic", or "".
+    pub(crate) attr: String,
+    /// Separator character placed after this widget (color auto-calculated).
+    pub(crate) separator: String,
+}
+
+impl WidgetStyle {
+    pub(crate) fn new(fg: &str, bg: &str, attr: &str, separator: &str) -> Self {
+        Self {
+            fg: fg.to_string(),
+            bg: bg.to_string(),
+            attr: attr.to_string(),
+            separator: separator.to_string(),
+        }
+    }
+
+    /// Whether this widget has a background color set.
+    pub(crate) fn has_bg(&self) -> bool {
+        !self.bg.is_empty()
+    }
+}
+
 /// Rendering style for the HUD status bar.
 #[derive(Clone, Copy, PartialEq, Default)]
 pub(crate) enum BarStyle {
@@ -332,6 +362,9 @@ pub(crate) struct HudConfig {
     pub(crate) timezone_offset: i64,
     /// Whether to use zellij's theme colors (theme "system").
     pub(crate) use_system_theme: bool,
+    /// Per-mode accent color (palette name or hex). Widgets using "accent"
+    /// resolve to this map at render time based on the current mode.
+    pub(crate) mode_accent: HashMap<InputMode, String>,
 }
 
 impl HudConfig {
@@ -377,6 +410,8 @@ impl HudConfig {
         self.color_tooltip_action = rebuilt.color_tooltip_action;
         self.color_tooltip_mode = rebuilt.color_tooltip_mode;
         self.icon_colors = rebuilt.icon_colors;
+        // mode_accent values are palette names, not resolved colors,
+        // so they don't need rebuilding on theme change.
     }
 
     fn build_from_palette(palette: &ThemePalette, config: &BTreeMap<String, String>) -> Self {
@@ -400,6 +435,23 @@ impl HudConfig {
         ]);
 
         let icon_colors = IconColors::from_palette(palette);
+
+        let mode_accent = HashMap::from([
+            (InputMode::Normal, "green".to_string()),
+            (InputMode::Locked, "red".to_string()),
+            (InputMode::Resize, "yellow".to_string()),
+            (InputMode::Pane, "blue".to_string()),
+            (InputMode::Tab, "blue".to_string()),
+            (InputMode::Scroll, "cyan".to_string()),
+            (InputMode::Search, "magenta".to_string()),
+            (InputMode::EnterSearch, "magenta".to_string()),
+            (InputMode::RenameTab, "yellow".to_string()),
+            (InputMode::RenamePane, "yellow".to_string()),
+            (InputMode::Session, "cyan".to_string()),
+            (InputMode::Move, "orange".to_string()),
+            (InputMode::Prompt, "cyan".to_string()),
+            (InputMode::Tmux, "orange".to_string()),
+        ]);
 
         let mut hud = Self {
             format_left: "{session} | {mode} | {tabs}".to_string(),
@@ -426,6 +478,7 @@ impl HudConfig {
             bar: BarStyle::Minimal,
             timezone_offset: 0,
             use_system_theme: false,
+            mode_accent,
         };
 
         // Apply color_* overrides (hex or palette name)
@@ -478,6 +531,29 @@ impl HudConfig {
             }
         }
 
+        // mode_accent_* overrides (palette name or hex)
+        let accent_map = [
+            ("mode_accent_normal", InputMode::Normal),
+            ("mode_accent_locked", InputMode::Locked),
+            ("mode_accent_pane", InputMode::Pane),
+            ("mode_accent_tab", InputMode::Tab),
+            ("mode_accent_resize", InputMode::Resize),
+            ("mode_accent_move", InputMode::Move),
+            ("mode_accent_scroll", InputMode::Scroll),
+            ("mode_accent_session", InputMode::Session),
+            ("mode_accent_search", InputMode::Search),
+            ("mode_accent_rename_tab", InputMode::RenameTab),
+            ("mode_accent_rename_pane", InputMode::RenamePane),
+            ("mode_accent_enter_search", InputMode::EnterSearch),
+            ("mode_accent_tmux", InputMode::Tmux),
+            ("mode_accent_prompt", InputMode::Prompt),
+        ];
+        for (key, mode) in &accent_map {
+            if let Some(v) = config.get(*key) {
+                hud.mode_accent.insert(*mode, v.clone());
+            }
+        }
+
         if let Some(v) = config.get("format_left") {
             hud.format_left = v.clone();
         }
@@ -511,6 +587,27 @@ impl HudConfig {
     fn resolve_color(value: &str, palette: &ThemePalette) -> Option<Color> {
         let hex = palette.resolve(value).unwrap_or(value);
         Color::from_hex(hex)
+    }
+
+    /// Resolve a color value that may be "accent", a palette name, or hex.
+    /// "accent" is resolved to the current mode's accent color via the palette.
+    pub(crate) fn resolve_color_with_accent(
+        &self,
+        value: &str,
+        palette: &ThemePalette,
+        mode: InputMode,
+    ) -> Color {
+        if value == "accent" {
+            let accent_name = self
+                .mode_accent
+                .get(&mode)
+                .map(|s| s.as_str())
+                .unwrap_or("blue");
+            let hex = palette.resolve(accent_name).unwrap_or(accent_name);
+            Color::from_hex(hex).unwrap_or_default()
+        } else {
+            Self::resolve_color(value, palette).unwrap_or_default()
+        }
     }
 }
 
