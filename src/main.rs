@@ -12,7 +12,21 @@ use zellij_tile::prelude::*;
 use std::collections::{BTreeMap, HashMap};
 use std::path::PathBuf;
 
+use std::borrow::Cow;
+
 use commands::{CMD_CONTEXT_MEM, CMD_CONTEXT_TZ, CMD_CONTEXT_USER, CommandOutput, MEM_UPDATE_INTERVAL};
+
+/// Single-quote a string for safe use in sh -c commands.
+fn shell_escape(s: &str) -> Cow<'_, str> {
+    if s.is_empty() {
+        return Cow::Borrowed("''");
+    }
+    if s.bytes().all(|b| matches!(b, b'a'..=b'z' | b'A'..=b'Z' | b'0'..=b'9' | b'_' | b'-' | b'.' | b'/')) {
+        Cow::Borrowed(s)
+    } else {
+        Cow::Owned(format!("'{}'", s.replace('\'', "'\\''")))
+    }
+}
 use config::HudConfig;
 use render::visible_len;
 
@@ -130,7 +144,7 @@ impl State {
     /// Run all user-defined command widgets immediately.
     fn run_all_command_widgets(&self) {
         for (name, widget) in &self.hud_config.command_widgets {
-            Self::run_command_widget(name, &widget.command);
+            self.run_command_widget(name, &widget.command);
         }
     }
 
@@ -149,16 +163,22 @@ impl State {
             *counter += 1;
             if *counter >= interval {
                 *counter = 0;
-                Self::run_command_widget(&name, &command);
+                self.run_command_widget(&name, &command);
             }
         }
     }
 
-    /// Execute a user-defined command widget's shell command.
-    fn run_command_widget(name: &str, command: &str) {
+    /// Execute a user-defined command widget's shell command in the focused pane's cwd.
+    fn run_command_widget(&self, name: &str, command: &str) {
         let mut ctx = BTreeMap::new();
         ctx.insert(CMD_CONTEXT_USER.to_string(), name.to_string());
-        run_command(&["sh", "-c", command], ctx);
+        let cwd = self.cwd.to_string_lossy();
+        let full_cmd = if cwd.is_empty() {
+            command.to_string()
+        } else {
+            format!("cd {} && {}", shell_escape(&cwd), command)
+        };
+        run_command(&["sh", "-c", &full_cmd], ctx);
     }
 
     /// Broadcast this Daemon instance's current mode to all peers via pipe.
@@ -289,6 +309,7 @@ impl ZellijPlugin for State {
                 subscribe(&[
                     EventType::ModeUpdate,
                     EventType::TabUpdate,
+                    EventType::PaneUpdate,
                     EventType::Timer,
                     EventType::PermissionRequestResult,
                     EventType::RunCommandResult,
@@ -490,6 +511,24 @@ impl ZellijPlugin for State {
                         let base = self.resolve_base_mode();
                         if !is_tooltip_hidden_mode(self.mode, base) {
                             self.resize_tooltip_for_mode();
+                        }
+                    }
+                }
+                true
+            }
+            Event::PaneUpdate(manifest) => {
+                if self.role == Role::Hud {
+                    // Find the focused terminal pane on the active tab
+                    let active_tab_pos = self.active_tab_idx.saturating_sub(1);
+                    if let Some(panes) = manifest.panes.get(&active_tab_pos) {
+                        if let Some(focused) = panes.iter().find(|p| p.is_focused && !p.is_plugin) {
+                            let pane_id = PaneId::Terminal(focused.id);
+                            if let Ok(new_cwd) = get_pane_cwd(pane_id) {
+                                if new_cwd != self.cwd {
+                                    self.cwd = new_cwd;
+                                    self.run_all_command_widgets();
+                                }
+                            }
                         }
                     }
                 }
