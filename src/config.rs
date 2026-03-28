@@ -174,7 +174,7 @@ impl ThemePalette {
         let dim = dim_color(fg);
         Self {
             fg: palette_color_to_hex(fg),
-            bg: palette_color_to_hex(s.ribbon_unselected.base),
+            bg: palette_color_to_hex(s.text_unselected.background),
             dim: palette_color_to_hex(dim),
             red: palette_color_to_hex(s.exit_code_error.base),
             green: palette_color_to_hex(s.exit_code_success.base),
