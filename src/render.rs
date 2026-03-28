@@ -111,50 +111,27 @@ impl State {
             }
             "{cwd}" => {
                 let (fg, bg, attr) = self.style_escapes(&c.cwd_style);
-                let content = format!("󰉖 {}", self.format_cwd());
+                let content = format!("\u{f0256} {}", self.format_cwd());
                 if bg.is_empty() {
                     format!("{fg}{attr}{content}{reset}")
                 } else {
                     format!("{bg}{fg}{attr} {content} {reset}")
-                }
-            }
-            "{date}" => {
-                let (fg, bg, attr) = self.style_escapes(&c.date_style);
-                let content = format!("󰃭 {}", self.format_date());
-                if bg.is_empty() {
-                    format!("{fg}{attr}{content}{reset}")
-                } else {
-                    format!("{bg}{fg}{attr} {content} {reset}")
-                }
-            }
-            "{time}" => {
-                let (fg, bg, attr) = self.style_escapes(&c.time_style);
-                let content = format!("󰥔 {}", self.format_time());
-                if bg.is_empty() {
-                    format!("{fg}{attr}{content}{reset}")
-                } else {
-                    format!("{bg}{fg}{attr} {content} {reset}")
-                }
-            }
-            "{memory}" => {
-                if self.memory_text.is_empty() {
-                    String::new()
-                } else {
-                    let (fg, bg, attr) = self.style_escapes(&c.memory_style);
-                    let content = format!("󰍛 {}", self.memory_text);
-                    if bg.is_empty() {
-                        format!("{fg}{attr}{content}{reset}")
-                    } else {
-                        format!("{bg}{fg}{attr} {content} {reset}")
-                    }
                 }
             }
             _ => {
-                // Try command_NAME or text_NAME
-                if let Some(name) = placeholder.strip_prefix("{command_").and_then(|s| s.strip_suffix('}')) {
-                    self.render_command_widget(name)
-                } else if let Some(name) = placeholder.strip_prefix("{text_").and_then(|s| s.strip_suffix('}')) {
-                    self.render_text_widget(name)
+                // Aliases: {time} → {command_time}, {date} → {command_date}, etc.
+                let name = placeholder.strip_prefix('{').and_then(|s| s.strip_suffix('}'));
+                if let Some(name) = name {
+                    if let Some(cmd_name) = name.strip_prefix("command_") {
+                        self.render_command_widget(cmd_name)
+                    } else if let Some(txt_name) = name.strip_prefix("text_") {
+                        self.render_text_widget(txt_name)
+                    } else if self.hud_config.command_widgets.contains_key(name) {
+                        // {time} → command widget "time", {memory} → command widget "memory", etc.
+                        self.render_command_widget(name)
+                    } else {
+                        String::new()
+                    }
                 } else {
                     String::new()
                 }

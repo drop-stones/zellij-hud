@@ -135,7 +135,7 @@ impl StyleDefaults {
             // "minimal" (default): flat look, single bar bg, fg-only widgets, pipe separators
             _ => Self {
                 format_left: "{mode} | {session} | {tabs}",
-                format_right: "{command_git_branch} | {cwd} | {time}",
+                format_right: "{cwd} | {command_git_branch} | {time}",
                 separator: SeparatorPreset::Pipe,
                 bar_bg: "bg",
                 separator_color: "dim",
@@ -398,7 +398,6 @@ pub(crate) struct HudConfig {
     pub(crate) enable_tooltip: bool,
     /// Named separator preset (triangle, circle, pipe, slash, backslash).
     pub(crate) separator: SeparatorPreset,
-    pub(crate) timezone_offset: i64,
     /// Whether to use zellij's theme colors (theme "system").
     pub(crate) use_system_theme: bool,
     /// Per-mode accent color (palette name or hex). Widgets using "accent"
@@ -434,12 +433,6 @@ pub(crate) struct HudConfig {
 
     /// CWD widget style.
     pub(crate) cwd_style: WidgetStyle,
-    /// Date widget style.
-    pub(crate) date_style: WidgetStyle,
-    /// Time widget style.
-    pub(crate) time_style: WidgetStyle,
-    /// Memory widget style.
-    pub(crate) memory_style: WidgetStyle,
 
     /// User-defined command widgets, keyed by name.
     pub(crate) command_widgets: HashMap<String, CommandWidget>,
@@ -524,7 +517,6 @@ impl HudConfig {
             enable_status_bar: true,
             enable_tooltip: true,
             separator: sd.separator,
-            timezone_offset: 0,
             use_system_theme: false,
             mode_accent,
 
@@ -556,9 +548,6 @@ impl HudConfig {
             tab_fullscreen_indicator: "⛶".to_string(),
             tabs_separator: String::new(),
             cwd_style: WidgetStyle::new(sd.cwd_style.0, sd.cwd_style.1, sd.cwd_style.2, ""),
-            date_style: WidgetStyle::new(sd.date_style.0, sd.date_style.1, sd.date_style.2, ""),
-            time_style: WidgetStyle::new(sd.time_style.0, sd.time_style.1, sd.time_style.2, ""),
-            memory_style: WidgetStyle::new(sd.memory_style.0, sd.memory_style.1, sd.memory_style.2, ""),
             command_widgets: HashMap::new(),
             text_widgets: HashMap::new(),
             palette: palette.clone(),
@@ -668,23 +657,49 @@ impl HudConfig {
 
         // v3 built-in widget style overrides
         Self::parse_widget_style(config, "cwd", &mut hud.cwd_style);
-        Self::parse_widget_style(config, "date", &mut hud.date_style);
-        Self::parse_widget_style(config, "time", &mut hud.time_style);
-        Self::parse_widget_style(config, "memory", &mut hud.memory_style);
 
         // Discover and parse command_NAME_* and text_NAME_* widgets
         hud.command_widgets = Self::parse_command_widgets(config);
         hud.text_widgets = Self::parse_text_widgets(config);
 
-        // Default git_branch command widget (can be overridden by user config)
-        hud.command_widgets.entry("git_branch".to_string()).or_insert_with(|| {
-            CommandWidget {
+        // Default command widgets (can be overridden by user config).
+        // Short names work as format placeholders: {time}, {memory}, {git_branch}.
+        let defaults: Vec<(&str, CommandWidget)> = vec![
+            ("time", CommandWidget {
+                command: "date +%H:%M".to_string(),
+                style: WidgetStyle::new(sd.time_style.0, sd.time_style.1, sd.time_style.2, ""),
+                format: "\u{f0954} {stdout}".to_string(),
+                interval: 1,
+            }),
+            ("date", CommandWidget {
+                command: "date +\"%b %d\"".to_string(),
+                style: WidgetStyle::new(sd.date_style.0, sd.date_style.1, sd.date_style.2, ""),
+                format: "\u{f00ed} {stdout}".to_string(),
+                interval: 60,
+            }),
+            ("memory", CommandWidget {
+                command: "free | awk '/Mem:/{printf \"%.0f%%\", $3/$2*100}'".to_string(),
+                style: WidgetStyle::new(sd.memory_style.0, sd.memory_style.1, sd.memory_style.2, ""),
+                format: "\u{f035b} {stdout}".to_string(),
+                interval: 5,
+            }),
+            ("git_branch", CommandWidget {
                 command: "git rev-parse --abbrev-ref HEAD 2>/dev/null".to_string(),
-                style: WidgetStyle::new("magenta", "", "", ""),
-                format: " {stdout}".to_string(),
+                style: WidgetStyle::new("orange", "", "", ""),
+                format: "\u{e0a0} {stdout}".to_string(),
                 interval: 10,
-            }
-        });
+            }),
+        ];
+        for (name, widget) in defaults {
+            hud.command_widgets.entry(name.to_string()).or_insert(widget);
+        }
+        // Apply short-name style overrides (e.g., time_fg, memory_bg)
+        let widget_names: Vec<String> = hud.command_widgets.keys().cloned().collect();
+        for name in &widget_names {
+            let mut style = hud.command_widgets[name].style.clone();
+            Self::parse_widget_style(config, name, &mut style);
+            hud.command_widgets.get_mut(name).unwrap().style = style;
+        }
 
         if let Some(v) = config.get("format_left") {
             hud.format_left = v.clone();

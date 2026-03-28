@@ -1,7 +1,6 @@
 mod action_types;
 mod commands;
 mod config;
-mod datetime;
 mod keybinds;
 pub(crate) mod render;
 mod spawn;
@@ -14,7 +13,7 @@ use std::path::PathBuf;
 
 use std::borrow::Cow;
 
-use commands::{CMD_CONTEXT_MEM, CMD_CONTEXT_TZ, CMD_CONTEXT_USER, CommandOutput, MEM_UPDATE_INTERVAL};
+use commands::{CMD_CONTEXT_USER, CommandOutput};
 
 /// Single-quote a string for safe use in sh -c commands.
 fn shell_escape(s: &str) -> Cow<'_, str> {
@@ -86,10 +85,6 @@ pub(crate) struct State {
     pub(crate) enable_status_bar: bool,
     /// Whether the tooltip is enabled
     pub(crate) enable_tooltip: bool,
-    /// Formatted memory usage string
-    pub(crate) memory_text: String,
-    /// Timer tick counter for throttling memory updates
-    pub(crate) timer_count: u32,
     /// Output from user-defined command widgets, keyed by widget name.
     pub(crate) command_outputs: HashMap<String, CommandOutput>,
     /// Per-command timer counters for interval tracking.
@@ -124,8 +119,6 @@ impl Default for State {
             hud_config: HudConfig::default(),
             enable_status_bar: true,
             enable_tooltip: true,
-            memory_text: String::new(),
-            timer_count: 0,
             command_outputs: HashMap::new(),
             command_timers: HashMap::new(),
         }
@@ -372,15 +365,7 @@ impl ZellijPlugin for State {
                     }
                     match self.role {
                         Role::Hud => {
-                            // Detect local timezone for clock display.
-                            let mut tz_ctx = BTreeMap::new();
-                            tz_ctx.insert(CMD_CONTEXT_TZ.to_string(), "1".to_string());
-                            run_command(&["date", "+%z"], tz_ctx);
-                            // Initial memory usage.
-                            let mut mem_ctx = BTreeMap::new();
-                            mem_ctx.insert(CMD_CONTEXT_MEM.to_string(), "1".to_string());
-                            run_command(&["free", "-b"], mem_ctx);
-                            // Run all user-defined commands initially.
+                            // Run all command widgets initially.
                             self.run_all_command_widgets();
                             // Ask all Daemons for the current mode (active and non-active clones
                             // both need this so they render the correct mode content).
@@ -395,16 +380,7 @@ impl ZellijPlugin for State {
                 true
             }
             Event::RunCommandResult(exit_code, ref stdout, _stderr, ref context) => {
-                if context.contains_key(CMD_CONTEXT_TZ) {
-                    if let Some(offset) = commands::parse_date_tz(stdout) {
-                        self.hud_config.timezone_offset = offset;
-                    }
-                } else if context.contains_key(CMD_CONTEXT_MEM) {
-                    if let Some((used, total)) = commands::parse_free(stdout) {
-                        let pct = (used as f64 / total as f64) * 100.0;
-                        self.memory_text = format!("{:.0}%", pct);
-                    }
-                } else if let Some(name) = context.get(CMD_CONTEXT_USER) {
+                if let Some(name) = context.get(CMD_CONTEXT_USER) {
                     let stdout_str = std::str::from_utf8(stdout)
                         .unwrap_or("")
                         .trim()
@@ -537,12 +513,6 @@ impl ZellijPlugin for State {
             Event::Timer(_) => {
                 if self.role == Role::Hud {
                     set_timeout(1.0);
-                    self.timer_count += 1;
-                    if self.timer_count % MEM_UPDATE_INTERVAL == 1 {
-                        let mut ctx = BTreeMap::new();
-                        ctx.insert(CMD_CONTEXT_MEM.to_string(), "1".to_string());
-                        run_command(&["free", "-b"], ctx);
-                    }
                     self.tick_command_widgets();
                 }
                 true
