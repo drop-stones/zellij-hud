@@ -137,6 +137,17 @@ impl State {
             .unwrap_or(InputMode::Normal)
     }
 
+    /// Update cwd from the currently focused terminal pane.
+    fn update_cwd_from_focused_pane(&mut self) {
+        if let Ok((_tab_idx, pane_id)) = get_focused_pane_info() {
+            if let PaneId::Terminal(_) = pane_id {
+                if let Ok(new_cwd) = get_pane_cwd(pane_id) {
+                    self.cwd = new_cwd;
+                }
+            }
+        }
+    }
+
     /// Run all user-defined command widgets immediately.
     fn run_all_command_widgets(&self) {
         for (name, widget) in &self.hud_config.command_widgets {
@@ -305,7 +316,6 @@ impl ZellijPlugin for State {
                 subscribe(&[
                     EventType::ModeUpdate,
                     EventType::TabUpdate,
-                    EventType::PaneUpdate,
                     EventType::Timer,
                     EventType::PermissionRequestResult,
                     EventType::RunCommandResult,
@@ -330,7 +340,6 @@ impl ZellijPlugin for State {
                     PermissionType::MessageAndLaunchOtherPlugins,
                     PermissionType::RunCommands,
                 ]);
-                // Daemon no longer needs Timer (debounce removed; close is immediate).
                 subscribe(&[
                     EventType::ModeUpdate,
                     EventType::TabUpdate,
@@ -368,7 +377,8 @@ impl ZellijPlugin for State {
                     }
                     match self.role {
                         Role::Hud => {
-                            // Run all command widgets initially.
+                            // Get focused pane's cwd before running commands
+                            self.update_cwd_from_focused_pane();
                             self.run_all_command_widgets();
                             // Ask all Daemons for the current mode (active and non-active clones
                             // both need this so they render the correct mode content).
@@ -506,26 +516,6 @@ impl ZellijPlugin for State {
                     }
                 }
                 should_render
-            }
-            Event::PaneUpdate(manifest) => {
-                let mut changed = false;
-                if self.role == Role::Hud {
-                    // Find the focused terminal pane on the active tab
-                    let active_tab_pos = self.active_tab_idx.saturating_sub(1);
-                    if let Some(panes) = manifest.panes.get(&active_tab_pos) {
-                        if let Some(focused) = panes.iter().find(|p| p.is_focused && !p.is_plugin) {
-                            let pane_id = PaneId::Terminal(focused.id);
-                            if let Ok(new_cwd) = get_pane_cwd(pane_id) {
-                                if new_cwd != self.cwd {
-                                    self.cwd = new_cwd;
-                                    self.run_all_command_widgets();
-                                    changed = true;
-                                }
-                            }
-                        }
-                    }
-                }
-                changed
             }
             Event::Timer(_) => {
                 if self.role == Role::Hud {
