@@ -565,7 +565,8 @@ impl ZellijPlugin for State {
     fn render(&mut self, _rows: usize, cols: usize) {
         match self.role {
             Role::Hud => {
-                let bg = self.hud_config.color_bg.bg();
+                let c = &self.hud_config;
+                let bg = c.resolve_color_with_accent(&c.bar_bg, &c.palette, self.mode).bg();
                 let reset = "\x1b[0m";
                 let left = self.render_format(&self.hud_config.format_left.clone(), false);
                 let right = format!(

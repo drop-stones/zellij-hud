@@ -327,8 +327,8 @@ pub(crate) struct TextWidget {
 pub(crate) struct HudConfig {
     pub(crate) format_left: String,
     pub(crate) format_right: String,
-    /// HUD bar background color.
-    pub(crate) color_bg: Color,
+    /// HUD bar background color (palette name or hex, resolved at render time).
+    pub(crate) bar_bg: String,
     /// Separator color (palette name or hex, resolved at render time).
     pub(crate) separator_color: String,
     pub(crate) icon_colors: IconColors,
@@ -436,7 +436,6 @@ impl HudConfig {
         let rebuilt = Self::build_from_palette(&palette, config);
 
         // Update resolved color fields; preserve non-color config.
-        self.color_bg = rebuilt.color_bg;
         self.icon_colors = rebuilt.icon_colors;
         self.palette = rebuilt.palette;
         // Widget styles and tooltip colors use palette names resolved
@@ -444,8 +443,6 @@ impl HudConfig {
     }
 
     fn build_from_palette(palette: &ThemePalette, config: &BTreeMap<String, String>) -> Self {
-        let color = |hex: &str| Color::from_hex(hex).unwrap_or_default();
-
         let icon_colors = IconColors::from_palette(palette);
 
         let mode_accent = HashMap::from([
@@ -468,7 +465,7 @@ impl HudConfig {
         let mut hud = Self {
             format_left: "{session} | {mode} | {tabs}".to_string(),
             format_right: "{cwd} | {memory} | {date} | {time}".to_string(),
-            color_bg: color(&palette.bg),
+            bar_bg: "bg".to_string(),
             separator_color: "dim".to_string(),
             icon_colors,
             tooltip_key_color: "cyan".to_string(),
@@ -524,11 +521,9 @@ impl HudConfig {
             palette: palette.clone(),
         };
 
-        // Apply color_bg override
-        if let Some(v) = config.get("color_bg") {
-            if let Some(c) = Self::resolve_color(v, palette) {
-                hud.color_bg = c;
-            }
+        // Apply bar_bg override
+        if let Some(v) = config.get("bar_bg") {
+            hud.bar_bg = v.clone();
         }
         // Separator color override
         if let Some(v) = config.get("separator_color") {
