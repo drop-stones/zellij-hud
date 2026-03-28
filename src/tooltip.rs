@@ -54,9 +54,11 @@ impl State {
                 &action_color
             };
 
-            // Mode switch icon uses per-mode color from status bar
+            // Mode switch icon uses per-mode accent color
             let icon_color = match &action.action_type {
-                ActionType::SwitchToMode(m) => c.color_for_mode(*m).fg(),
+                ActionType::SwitchToMode(m) => {
+                    c.resolve_color_with_accent("accent", &c.palette, *m).fg()
+                }
                 _ => action.action_type.icon_color(&c.icon_colors).fg(),
             };
 

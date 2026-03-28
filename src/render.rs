@@ -109,21 +109,44 @@ impl State {
                 }
                 out
             }
-            // Legacy built-in segments (will become command widgets in the future)
             "{cwd}" => {
-                format!("{}󰉖 {}{reset}", c.color_cwd.fg(), self.format_cwd())
+                let (fg, bg, attr) = self.style_escapes(&c.cwd_style);
+                let content = format!("󰉖 {}", self.format_cwd());
+                if bg.is_empty() {
+                    format!("{fg}{attr}{content}{reset}")
+                } else {
+                    format!("{bg}{fg}{attr} {content} {reset}")
+                }
             }
             "{date}" => {
-                format!("{}󰃭 {}{reset}", c.color_date.fg(), self.format_date())
+                let (fg, bg, attr) = self.style_escapes(&c.date_style);
+                let content = format!("󰃭 {}", self.format_date());
+                if bg.is_empty() {
+                    format!("{fg}{attr}{content}{reset}")
+                } else {
+                    format!("{bg}{fg}{attr} {content} {reset}")
+                }
             }
             "{time}" => {
-                format!("{}󰥔 {}{reset}", c.color_time.fg(), self.format_time())
+                let (fg, bg, attr) = self.style_escapes(&c.time_style);
+                let content = format!("󰥔 {}", self.format_time());
+                if bg.is_empty() {
+                    format!("{fg}{attr}{content}{reset}")
+                } else {
+                    format!("{bg}{fg}{attr} {content} {reset}")
+                }
             }
             "{memory}" => {
                 if self.memory_text.is_empty() {
                     String::new()
                 } else {
-                    format!("{}󰍛 {}{reset}", c.color_memory.fg(), self.memory_text)
+                    let (fg, bg, attr) = self.style_escapes(&c.memory_style);
+                    let content = format!("󰍛 {}", self.memory_text);
+                    if bg.is_empty() {
+                        format!("{fg}{attr}{content}{reset}")
+                    } else {
+                        format!("{bg}{fg}{attr} {content} {reset}")
+                    }
                 }
             }
             _ => {
@@ -189,7 +212,8 @@ impl State {
         } else {
             c.separator.minimal_left()
         };
-        let sep = format!("{}{}{reset}", c.color_separator.fg(), sep_char);
+        let sep_color = c.resolve_color_with_accent(&c.separator_color, &c.palette, self.mode);
+        let sep = format!("{}{}{reset}", sep_color.fg(), sep_char);
 
         let parts: Vec<&str> = format_str.split(" | ").collect();
         let mut out = String::new();

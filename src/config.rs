@@ -351,17 +351,10 @@ pub(crate) struct TextWidget {
 pub(crate) struct HudConfig {
     pub(crate) format_left: String,
     pub(crate) format_right: String,
+    /// HUD bar background color.
     pub(crate) color_bg: Color,
-    pub(crate) color_session: Color,
-    pub(crate) color_mode: Color,
-    pub(crate) mode_colors: HashMap<InputMode, Color>,
-    pub(crate) color_tab_active: Color,
-    pub(crate) color_tab_inactive: Color,
-    pub(crate) color_cwd: Color,
-    pub(crate) color_date: Color,
-    pub(crate) color_time: Color,
-    pub(crate) color_memory: Color,
-    pub(crate) color_separator: Color,
+    /// Separator color (palette name or hex, resolved at render time).
+    pub(crate) separator_color: String,
     pub(crate) color_tooltip_key: Color,
     pub(crate) color_tooltip_arrow: Color,
     pub(crate) color_tooltip_action: Color,
@@ -378,7 +371,7 @@ pub(crate) struct HudConfig {
     /// resolve to this map at render time based on the current mode.
     pub(crate) mode_accent: HashMap<InputMode, String>,
 
-    // --- v3 widget styles (coexist with old color_* fields during transition) ---
+    // --- v3 widget styles ---
 
     /// Mode widget style.
     pub(crate) mode_style: WidgetStyle,
@@ -404,6 +397,15 @@ pub(crate) struct HudConfig {
     pub(crate) tab_fullscreen_indicator: String,
     /// Separator after the tabs widget.
     pub(crate) tabs_separator: String,
+
+    /// CWD widget style.
+    pub(crate) cwd_style: WidgetStyle,
+    /// Date widget style.
+    pub(crate) date_style: WidgetStyle,
+    /// Time widget style.
+    pub(crate) time_style: WidgetStyle,
+    /// Memory widget style.
+    pub(crate) memory_style: WidgetStyle,
 
     /// User-defined command widgets, keyed by name.
     pub(crate) command_widgets: HashMap<String, CommandWidget>,
@@ -440,47 +442,20 @@ impl HudConfig {
         palette.apply_overrides(config);
         let rebuilt = Self::build_from_palette(&palette, config);
 
-        // Update color fields only; preserve non-color config (format, separator, etc.)
+        // Update resolved color fields; preserve non-color config.
         self.color_bg = rebuilt.color_bg;
-        self.color_session = rebuilt.color_session;
-        self.color_mode = rebuilt.color_mode;
-        self.mode_colors = rebuilt.mode_colors;
-        self.color_tab_active = rebuilt.color_tab_active;
-        self.color_tab_inactive = rebuilt.color_tab_inactive;
-        self.color_cwd = rebuilt.color_cwd;
-        self.color_date = rebuilt.color_date;
-        self.color_time = rebuilt.color_time;
-        self.color_memory = rebuilt.color_memory;
-        self.color_separator = rebuilt.color_separator;
         self.color_tooltip_key = rebuilt.color_tooltip_key;
         self.color_tooltip_arrow = rebuilt.color_tooltip_arrow;
         self.color_tooltip_action = rebuilt.color_tooltip_action;
         self.color_tooltip_mode = rebuilt.color_tooltip_mode;
         self.icon_colors = rebuilt.icon_colors;
         self.palette = rebuilt.palette;
-        // mode_accent values are palette names, not resolved colors,
+        // Widget styles use palette names resolved at render time,
         // so they don't need rebuilding on theme change.
     }
 
     fn build_from_palette(palette: &ThemePalette, config: &BTreeMap<String, String>) -> Self {
         let color = |hex: &str| Color::from_hex(hex).unwrap_or_default();
-
-        let mode_colors = HashMap::from([
-            (InputMode::Normal, color(&palette.green)),
-            (InputMode::Locked, color(&palette.dim)),
-            (InputMode::Pane, color(&palette.orange)),
-            (InputMode::Tab, color(&palette.yellow)),
-            (InputMode::Resize, color(&palette.red)),
-            (InputMode::Move, color(&palette.magenta)),
-            (InputMode::Scroll, color(&palette.cyan)),
-            (InputMode::Session, color(&palette.magenta)),
-            (InputMode::Search, color(&palette.yellow)),
-            (InputMode::RenameTab, color(&palette.yellow)),
-            (InputMode::RenamePane, color(&palette.yellow)),
-            (InputMode::EnterSearch, color(&palette.yellow)),
-            (InputMode::Tmux, color(&palette.orange)),
-            (InputMode::Prompt, color(&palette.blue)),
-        ]);
 
         let icon_colors = IconColors::from_palette(palette);
 
@@ -505,16 +480,7 @@ impl HudConfig {
             format_left: "{session} | {mode} | {tabs}".to_string(),
             format_right: "{cwd} | {memory} | {date} | {time}".to_string(),
             color_bg: color(&palette.bg),
-            color_session: color(&palette.cyan),
-            color_mode: color(&palette.blue),
-            mode_colors,
-            color_tab_active: color(&palette.fg),
-            color_tab_inactive: color(&palette.dim),
-            color_cwd: color(&palette.cyan),
-            color_date: color(&palette.magenta),
-            color_time: color(&palette.blue),
-            color_memory: color(&palette.green),
-            color_separator: color(&palette.dim),
+            separator_color: "dim".to_string(),
             color_tooltip_key: color(&palette.cyan),
             color_tooltip_arrow: color(&palette.dim),
             color_tooltip_action: color(&palette.magenta),
@@ -554,12 +520,27 @@ impl HudConfig {
             tab_sync_indicator: "🔗".to_string(),
             tab_fullscreen_indicator: "⛶".to_string(),
             tabs_separator: String::new(),
+            cwd_style: WidgetStyle::new("cyan", "", "", ""),
+            date_style: WidgetStyle::new("magenta", "", "", ""),
+            time_style: WidgetStyle::new("blue", "", "", ""),
+            memory_style: WidgetStyle::new("green", "", "", ""),
             command_widgets: HashMap::new(),
             text_widgets: HashMap::new(),
             palette: palette.clone(),
         };
 
-        // Apply color_* overrides (hex or palette name)
+        // Apply color_bg override
+        if let Some(v) = config.get("color_bg") {
+            if let Some(c) = Self::resolve_color(v, palette) {
+                hud.color_bg = c;
+            }
+        }
+        // Separator color override
+        if let Some(v) = config.get("separator_color") {
+            hud.separator_color = v.clone();
+        }
+
+        // Tooltip color overrides (still use resolved Color)
         macro_rules! color_override {
             ($key:expr, $field:expr) => {
                 if let Some(v) = config.get($key) {
@@ -569,45 +550,10 @@ impl HudConfig {
                 }
             };
         }
-        color_override!("color_bg", hud.color_bg);
-        color_override!("color_session", hud.color_session);
-        color_override!("color_mode", hud.color_mode);
-        color_override!("color_tab_active", hud.color_tab_active);
-        color_override!("color_tab_inactive", hud.color_tab_inactive);
-        color_override!("color_cwd", hud.color_cwd);
-        color_override!("color_date", hud.color_date);
-        color_override!("color_time", hud.color_time);
-        color_override!("color_memory", hud.color_memory);
-        color_override!("color_separator", hud.color_separator);
         color_override!("color_tooltip_key", hud.color_tooltip_key);
         color_override!("color_tooltip_arrow", hud.color_tooltip_arrow);
         color_override!("color_tooltip_action", hud.color_tooltip_action);
         color_override!("color_tooltip_mode", hud.color_tooltip_mode);
-
-        // color_mode_* overrides
-        let mode_map = [
-            ("color_mode_normal", InputMode::Normal),
-            ("color_mode_locked", InputMode::Locked),
-            ("color_mode_pane", InputMode::Pane),
-            ("color_mode_tab", InputMode::Tab),
-            ("color_mode_resize", InputMode::Resize),
-            ("color_mode_move", InputMode::Move),
-            ("color_mode_scroll", InputMode::Scroll),
-            ("color_mode_session", InputMode::Session),
-            ("color_mode_search", InputMode::Search),
-            ("color_mode_rename_tab", InputMode::RenameTab),
-            ("color_mode_rename_pane", InputMode::RenamePane),
-            ("color_mode_enter_search", InputMode::EnterSearch),
-            ("color_mode_tmux", InputMode::Tmux),
-            ("color_mode_prompt", InputMode::Prompt),
-        ];
-        for (key, mode) in &mode_map {
-            if let Some(v) = config.get(*key) {
-                if let Some(c) = Self::resolve_color(v, palette) {
-                    hud.mode_colors.insert(*mode, c);
-                }
-            }
-        }
 
         // mode_accent_* overrides (palette name or hex)
         let accent_map = [
@@ -681,6 +627,12 @@ impl HudConfig {
             hud.tabs_separator = v.clone();
         }
 
+        // v3 built-in widget style overrides
+        Self::parse_widget_style(config, "cwd", &mut hud.cwd_style);
+        Self::parse_widget_style(config, "date", &mut hud.date_style);
+        Self::parse_widget_style(config, "time", &mut hud.time_style);
+        Self::parse_widget_style(config, "memory", &mut hud.memory_style);
+
         // Discover and parse command_NAME_* and text_NAME_* widgets
         hud.command_widgets = Self::parse_command_widgets(config);
         hud.text_widgets = Self::parse_text_widgets(config);
@@ -702,10 +654,6 @@ impl HudConfig {
         }
 
         hud
-    }
-
-    pub(crate) fn color_for_mode(&self, mode: InputMode) -> &Color {
-        self.mode_colors.get(&mode).unwrap_or(&self.color_mode)
     }
 
     /// Discover command widgets from config keys matching `command_NAME_command`.
