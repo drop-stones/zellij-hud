@@ -574,12 +574,13 @@ impl ZellijPlugin for State {
                     self.render_format(&self.hud_config.format_right.clone(), true),
                 );
 
-                let left_visible = visible_len(&left);
+                let left_visible = 1 + visible_len(&left); // 1 for left padding
                 let right_visible = visible_len(&right);
                 let gap = cols.saturating_sub(left_visible + right_visible);
 
                 let mut output = String::new();
                 output.push_str(&bg);
+                output.push(' ');
                 output.push_str(&left);
                 output.push_str(&" ".repeat(gap));
                 output.push_str(&right);

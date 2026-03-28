@@ -111,6 +111,47 @@ impl SeparatorPreset {
     }
 }
 
+/// Style preset for the status bar and tooltip.
+/// Provides default widget styles; user overrides apply on top.
+struct StyleDefaults {
+    format_left: &'static str,
+    format_right: &'static str,
+    separator: SeparatorPreset,
+    bar_bg: &'static str,
+    separator_color: &'static str,
+    mode_style: (&'static str, &'static str, &'static str),   // (fg, bg, attr)
+    session_style: (&'static str, &'static str, &'static str),
+    tab_active_style: (&'static str, &'static str, &'static str),
+    tab_inactive_style: (&'static str, &'static str, &'static str),
+    cwd_style: (&'static str, &'static str, &'static str),
+    date_style: (&'static str, &'static str, &'static str),
+    time_style: (&'static str, &'static str, &'static str),
+    memory_style: (&'static str, &'static str, &'static str),
+}
+
+impl StyleDefaults {
+    fn from_name(name: &str) -> Self {
+        match name {
+            // "minimal" (default): flat look, single bar bg, fg-only widgets, pipe separators
+            _ => Self {
+                format_left: "{mode} | {session} | {tabs}",
+                format_right: "{command_git_branch} | {cwd} | {time}",
+                separator: SeparatorPreset::Pipe,
+                bar_bg: "bg",
+                separator_color: "dim",
+                mode_style: ("accent", "", "bold"),
+                session_style: ("cyan", "", ""),
+                tab_active_style: ("fg", "", "bold"),
+                tab_inactive_style: ("dim", "", ""),
+                cwd_style: ("cyan", "", ""),
+                date_style: ("magenta", "", ""),
+                time_style: ("blue", "", ""),
+                memory_style: ("green", "", ""),
+            },
+        }
+    }
+}
+
 /// 10-color palette used to derive all UI colors.
 /// Stored in HudConfig for runtime color resolution (accent, palette names).
 #[derive(Clone)]
@@ -443,6 +484,8 @@ impl HudConfig {
     }
 
     fn build_from_palette(palette: &ThemePalette, config: &BTreeMap<String, String>) -> Self {
+        let style_name = config.get("style").map(|s| s.as_str()).unwrap_or("minimal");
+        let sd = StyleDefaults::from_name(style_name);
         let icon_colors = IconColors::from_palette(palette);
 
         let mode_accent = HashMap::from([
@@ -463,10 +506,10 @@ impl HudConfig {
         ]);
 
         let mut hud = Self {
-            format_left: "{session} | {mode} | {tabs}".to_string(),
-            format_right: "{cwd} | {memory} | {date} | {time}".to_string(),
-            bar_bg: "bg".to_string(),
-            separator_color: "dim".to_string(),
+            format_left: sd.format_left.to_string(),
+            format_right: sd.format_right.to_string(),
+            bar_bg: sd.bar_bg.to_string(),
+            separator_color: sd.separator_color.to_string(),
             icon_colors,
             tooltip_key_color: "cyan".to_string(),
             tooltip_separator_color: "dim".to_string(),
@@ -480,13 +523,13 @@ impl HudConfig {
             tooltip_border: true,
             enable_status_bar: true,
             enable_tooltip: true,
-            separator: SeparatorPreset::Triangle,
+            separator: sd.separator,
             timezone_offset: 0,
             use_system_theme: false,
             mode_accent,
 
-            // v3 widget styles
-            mode_style: WidgetStyle::new("bg", "accent", "bold", ""),
+            // v3 widget styles (defaults from style preset)
+            mode_style: WidgetStyle::new(sd.mode_style.0, sd.mode_style.1, sd.mode_style.2, ""),
             mode_content: HashMap::from([
                 (InputMode::Normal, "󰍀 NORMAL".to_string()),
                 (InputMode::Locked, "󰌾 LOCKED".to_string()),
@@ -503,19 +546,19 @@ impl HudConfig {
                 (InputMode::Prompt, "󰘥 PROMPT".to_string()),
                 (InputMode::Tmux, "󰰣 TMUX".to_string()),
             ]),
-            session_style: WidgetStyle::new("cyan", "", "", ""),
+            session_style: WidgetStyle::new(sd.session_style.0, sd.session_style.1, sd.session_style.2, ""),
             session_format: "󰆍 {name}".to_string(),
-            tab_active_style: WidgetStyle::new("white", "blue", "bold", ""),
-            tab_inactive_style: WidgetStyle::new("dim", "", "", ""),
+            tab_active_style: WidgetStyle::new(sd.tab_active_style.0, sd.tab_active_style.1, sd.tab_active_style.2, ""),
+            tab_inactive_style: WidgetStyle::new(sd.tab_inactive_style.0, sd.tab_inactive_style.1, sd.tab_inactive_style.2, ""),
             tab_format: "{name}".to_string(),
             tab_divider: " ".to_string(),
             tab_sync_indicator: "🔗".to_string(),
             tab_fullscreen_indicator: "⛶".to_string(),
             tabs_separator: String::new(),
-            cwd_style: WidgetStyle::new("cyan", "", "", ""),
-            date_style: WidgetStyle::new("magenta", "", "", ""),
-            time_style: WidgetStyle::new("blue", "", "", ""),
-            memory_style: WidgetStyle::new("green", "", "", ""),
+            cwd_style: WidgetStyle::new(sd.cwd_style.0, sd.cwd_style.1, sd.cwd_style.2, ""),
+            date_style: WidgetStyle::new(sd.date_style.0, sd.date_style.1, sd.date_style.2, ""),
+            time_style: WidgetStyle::new(sd.time_style.0, sd.time_style.1, sd.time_style.2, ""),
+            memory_style: WidgetStyle::new(sd.memory_style.0, sd.memory_style.1, sd.memory_style.2, ""),
             command_widgets: HashMap::new(),
             text_widgets: HashMap::new(),
             palette: palette.clone(),
@@ -632,6 +675,16 @@ impl HudConfig {
         // Discover and parse command_NAME_* and text_NAME_* widgets
         hud.command_widgets = Self::parse_command_widgets(config);
         hud.text_widgets = Self::parse_text_widgets(config);
+
+        // Default git_branch command widget (can be overridden by user config)
+        hud.command_widgets.entry("git_branch".to_string()).or_insert_with(|| {
+            CommandWidget {
+                command: "git rev-parse --abbrev-ref HEAD 2>/dev/null".to_string(),
+                style: WidgetStyle::new("magenta", "", "", ""),
+                format: " {stdout}".to_string(),
+                interval: 10,
+            }
+        });
 
         if let Some(v) = config.get("format_left") {
             hud.format_left = v.clone();
