@@ -168,13 +168,18 @@ impl State {
             Some(w) => w,
             None => return String::new(),
         };
-        let output = self.command_outputs.get(name);
-        let stdout = output.map(|o| o.stdout.as_str()).unwrap_or("");
-        let exit_code = output.map(|o| o.exit_code).unwrap_or(0);
+        let output = match self.command_outputs.get(name) {
+            Some(o) => o,
+            None => return String::new(),
+        };
 
-        if stdout.is_empty() && widget.format == "{stdout}" {
+        // Hide widget on command failure or empty output
+        if output.exit_code != 0 || output.stdout.is_empty() {
             return String::new();
         }
+
+        let stdout = output.stdout.as_str();
+        let exit_code = output.exit_code;
 
         let content = widget.format
             .replace("{stdout}", stdout)
