@@ -85,6 +85,8 @@ pub(crate) struct State {
     pub(crate) enable_status_bar: bool,
     /// Whether the tooltip is enabled
     pub(crate) enable_tooltip: bool,
+    /// Whether initial command results have arrived (suppresses flicker).
+    pub(crate) render_ready: bool,
     /// Output from user-defined command widgets, keyed by widget name.
     pub(crate) command_outputs: HashMap<String, CommandOutput>,
     /// Per-command timer counters for interval tracking.
@@ -119,6 +121,7 @@ impl Default for State {
             hud_config: HudConfig::default(),
             enable_status_bar: true,
             enable_tooltip: true,
+            render_ready: false,
             command_outputs: HashMap::new(),
             command_timers: HashMap::new(),
         }
@@ -392,6 +395,7 @@ impl ZellijPlugin for State {
                             exit_code: exit_code.unwrap_or(-1),
                         },
                     );
+                    self.render_ready = true;
                 }
                 true
             }
@@ -460,11 +464,22 @@ impl ZellijPlugin for State {
                 true
             }
             Event::TabUpdate(tabs) => {
-                self.tabs = tabs;
+                let old_tabs = std::mem::replace(&mut self.tabs, tabs);
+                let mut should_render = false;
+
+                // Check if tab list changed (names, count, active state)
+                if old_tabs.len() != self.tabs.len()
+                    || old_tabs.iter().zip(self.tabs.iter()).any(|(a, b)| {
+                        a.active != b.active
+                            || a.name != b.name
+                            || a.is_sync_panes_active != b.is_sync_panes_active
+                            || a.is_fullscreen_active != b.is_fullscreen_active
+                    })
+                {
+                    should_render = true;
+                }
 
                 if self.role == Role::Hud || self.role == Role::Tooltip {
-                    // Only the clone spawned for this client (own_client_id == spawned_for_client)
-                    // moves the pane. This is known from load() time — no race condition.
                     let is_active_clone = self.own_client_id == self.spawned_for_client;
 
                     if let Some(active_tab_index) =
@@ -490,9 +505,10 @@ impl ZellijPlugin for State {
                         }
                     }
                 }
-                true
+                should_render
             }
             Event::PaneUpdate(manifest) => {
+                let mut changed = false;
                 if self.role == Role::Hud {
                     // Find the focused terminal pane on the active tab
                     let active_tab_pos = self.active_tab_idx.saturating_sub(1);
@@ -503,12 +519,13 @@ impl ZellijPlugin for State {
                                 if new_cwd != self.cwd {
                                     self.cwd = new_cwd;
                                     self.run_all_command_widgets();
+                                    changed = true;
                                 }
                             }
                         }
                     }
                 }
-                true
+                changed
             }
             Event::Timer(_) => {
                 if self.role == Role::Hud {
@@ -574,6 +591,11 @@ impl ZellijPlugin for State {
     fn render(&mut self, _rows: usize, cols: usize) {
         match self.role {
             Role::Hud => {
+                if !self.render_ready {
+                    // Suppress rendering until first command results arrive
+                    print!("{}", " ".repeat(cols));
+                    return;
+                }
                 let c = &self.hud_config;
                 let bg = c.resolve_color_with_accent(&c.bar_bg, &c.palette, self.mode).bg();
                 let reset = "\x1b[0m";
