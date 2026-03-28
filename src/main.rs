@@ -9,10 +9,10 @@ mod tooltip;
 
 use zellij_tile::prelude::*;
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::path::PathBuf;
 
-use commands::{CMD_CONTEXT_MEM, CMD_CONTEXT_TZ, MEM_UPDATE_INTERVAL};
+use commands::{CMD_CONTEXT_MEM, CMD_CONTEXT_TZ, CMD_CONTEXT_USER, CommandOutput, MEM_UPDATE_INTERVAL};
 use config::{BarStyle, HudConfig};
 use render::visible_len;
 
@@ -76,6 +76,10 @@ pub(crate) struct State {
     pub(crate) memory_text: String,
     /// Timer tick counter for throttling memory updates
     pub(crate) timer_count: u32,
+    /// Output from user-defined command widgets, keyed by widget name.
+    pub(crate) command_outputs: HashMap<String, CommandOutput>,
+    /// Per-command timer counters for interval tracking.
+    pub(crate) command_timers: HashMap<String, u32>,
     /// This instance's client ID (from get_plugin_ids).
     pub(crate) own_client_id: u16,
     /// The client ID that spawned this HUD/Tooltip instance.
@@ -108,6 +112,8 @@ impl Default for State {
             enable_tooltip: true,
             memory_text: String::new(),
             timer_count: 0,
+            command_outputs: HashMap::new(),
+            command_timers: HashMap::new(),
         }
     }
 }
@@ -119,6 +125,40 @@ impl State {
             .as_ref()
             .and_then(|mi| mi.base_mode)
             .unwrap_or(InputMode::Normal)
+    }
+
+    /// Run all user-defined command widgets immediately.
+    fn run_all_command_widgets(&self) {
+        for (name, widget) in &self.hud_config.command_widgets {
+            Self::run_command_widget(name, &widget.command);
+        }
+    }
+
+    /// Tick per-command interval counters. Run commands whose interval has elapsed.
+    fn tick_command_widgets(&mut self) {
+        let names_and_cmds: Vec<(String, String, u32)> = self
+            .hud_config
+            .command_widgets
+            .iter()
+            .filter(|(_, w)| w.interval > 0)
+            .map(|(name, w)| (name.clone(), w.command.clone(), w.interval))
+            .collect();
+
+        for (name, command, interval) in names_and_cmds {
+            let counter = self.command_timers.entry(name.clone()).or_insert(0);
+            *counter += 1;
+            if *counter >= interval {
+                *counter = 0;
+                Self::run_command_widget(&name, &command);
+            }
+        }
+    }
+
+    /// Execute a user-defined command widget's shell command.
+    fn run_command_widget(name: &str, command: &str) {
+        let mut ctx = BTreeMap::new();
+        ctx.insert(CMD_CONTEXT_USER.to_string(), name.to_string());
+        run_command(&["sh", "-c", command], ctx);
     }
 
     /// Broadcast this Daemon instance's current mode to all peers via pipe.
@@ -319,6 +359,8 @@ impl ZellijPlugin for State {
                             let mut mem_ctx = BTreeMap::new();
                             mem_ctx.insert(CMD_CONTEXT_MEM.to_string(), "1".to_string());
                             run_command(&["free", "-b"], mem_ctx);
+                            // Run all user-defined commands initially.
+                            self.run_all_command_widgets();
                             // Ask all Daemons for the current mode (active and non-active clones
                             // both need this so they render the correct mode content).
                             pipe_message_to_plugin(MessageToPlugin::new("request_mode_sync"));
@@ -331,7 +373,7 @@ impl ZellijPlugin for State {
                 }
                 true
             }
-            Event::RunCommandResult(_exit_code, ref stdout, _stderr, ref context) => {
+            Event::RunCommandResult(exit_code, ref stdout, _stderr, ref context) => {
                 if context.contains_key(CMD_CONTEXT_TZ) {
                     if let Some(offset) = commands::parse_date_tz(stdout) {
                         self.hud_config.timezone_offset = offset;
@@ -341,6 +383,18 @@ impl ZellijPlugin for State {
                         let pct = (used as f64 / total as f64) * 100.0;
                         self.memory_text = format!("{:.0}%", pct);
                     }
+                } else if let Some(name) = context.get(CMD_CONTEXT_USER) {
+                    let stdout_str = std::str::from_utf8(stdout)
+                        .unwrap_or("")
+                        .trim()
+                        .to_string();
+                    self.command_outputs.insert(
+                        name.clone(),
+                        CommandOutput {
+                            stdout: stdout_str,
+                            exit_code: exit_code.unwrap_or(-1),
+                        },
+                    );
                 }
                 true
             }
@@ -450,6 +504,7 @@ impl ZellijPlugin for State {
                         ctx.insert(CMD_CONTEXT_MEM.to_string(), "1".to_string());
                         run_command(&["free", "-b"], ctx);
                     }
+                    self.tick_command_widgets();
                 }
                 true
             }

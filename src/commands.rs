@@ -2,6 +2,16 @@ pub(crate) const CMD_CONTEXT_TZ: &str = "tz_detect";
 pub(crate) const CMD_CONTEXT_MEM: &str = "mem_usage";
 pub(crate) const MEM_UPDATE_INTERVAL: u32 = 5;
 
+/// Context key for user-defined command widgets. Value = widget name.
+pub(crate) const CMD_CONTEXT_USER: &str = "cmd_widget";
+
+/// Output captured from a user-defined command widget execution.
+#[derive(Clone, Default)]
+pub(crate) struct CommandOutput {
+    pub(crate) stdout: String,
+    pub(crate) exit_code: i32,
+}
+
 /// Parse `date +%z` output (e.g. "+0900", "-0500") into seconds offset.
 pub(crate) fn parse_date_tz(stdout: &[u8]) -> Option<i64> {
     let s = std::str::from_utf8(stdout).ok()?.trim();
