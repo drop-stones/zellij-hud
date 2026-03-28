@@ -334,6 +334,28 @@ impl IconColors {
     }
 }
 
+/// User-defined command widget: runs a shell command at an interval.
+#[derive(Clone)]
+pub(crate) struct CommandWidget {
+    /// Shell command to execute.
+    pub(crate) command: String,
+    /// Widget style.
+    pub(crate) style: WidgetStyle,
+    /// Output format template. Placeholders: {stdout}, {stderr}, {exit_code}.
+    pub(crate) format: String,
+    /// Execution interval in seconds. 0 = run once.
+    pub(crate) interval: u32,
+}
+
+/// User-defined static text widget.
+#[derive(Clone)]
+pub(crate) struct TextWidget {
+    /// Static content to display.
+    pub(crate) content: String,
+    /// Widget style.
+    pub(crate) style: WidgetStyle,
+}
+
 pub(crate) struct HudConfig {
     pub(crate) format_left: String,
     pub(crate) format_right: String,
@@ -392,6 +414,11 @@ pub(crate) struct HudConfig {
     pub(crate) tab_fullscreen_indicator: String,
     /// Separator after the tabs widget.
     pub(crate) tabs_separator: String,
+
+    /// User-defined command widgets, keyed by name.
+    pub(crate) command_widgets: HashMap<String, CommandWidget>,
+    /// User-defined text widgets, keyed by name.
+    pub(crate) text_widgets: HashMap<String, TextWidget>,
 }
 
 impl HudConfig {
@@ -534,6 +561,8 @@ impl HudConfig {
             tab_sync_indicator: "🔗".to_string(),
             tab_fullscreen_indicator: "⛶".to_string(),
             tabs_separator: String::new(),
+            command_widgets: HashMap::new(),
+            text_widgets: HashMap::new(),
         };
 
         // Apply color_* overrides (hex or palette name)
@@ -658,6 +687,10 @@ impl HudConfig {
             hud.tabs_separator = v.clone();
         }
 
+        // Discover and parse command_NAME_* and text_NAME_* widgets
+        hud.command_widgets = Self::parse_command_widgets(config);
+        hud.text_widgets = Self::parse_text_widgets(config);
+
         if let Some(v) = config.get("format_left") {
             hud.format_left = v.clone();
         }
@@ -685,6 +718,71 @@ impl HudConfig {
 
     pub(crate) fn color_for_mode(&self, mode: InputMode) -> &Color {
         self.mode_colors.get(&mode).unwrap_or(&self.color_mode)
+    }
+
+    /// Discover command widgets from config keys matching `command_NAME_command`.
+    fn parse_command_widgets(config: &BTreeMap<String, String>) -> HashMap<String, CommandWidget> {
+        let mut widgets = HashMap::new();
+        let suffix = "_command";
+
+        for key in config.keys() {
+            if let Some(rest) = key.strip_prefix("command_") {
+                if let Some(name) = rest.strip_suffix(suffix) {
+                    if name.is_empty() {
+                        continue;
+                    }
+                    let prefix = format!("command_{}", name);
+                    let command = config.get(key).cloned().unwrap_or_default();
+                    let mut style = WidgetStyle::default();
+                    Self::parse_widget_style(config, &prefix, &mut style);
+                    let format = config
+                        .get(&format!("{}_format", prefix))
+                        .cloned()
+                        .unwrap_or_else(|| "{stdout}".to_string());
+                    let interval = config
+                        .get(&format!("{}_interval", prefix))
+                        .and_then(|v| v.parse().ok())
+                        .unwrap_or(10);
+
+                    widgets.insert(
+                        name.to_string(),
+                        CommandWidget {
+                            command,
+                            style,
+                            format,
+                            interval,
+                        },
+                    );
+                }
+            }
+        }
+        widgets
+    }
+
+    /// Discover text widgets from config keys matching `text_NAME_content`.
+    fn parse_text_widgets(config: &BTreeMap<String, String>) -> HashMap<String, TextWidget> {
+        let mut widgets = HashMap::new();
+        let suffix = "_content";
+
+        for key in config.keys() {
+            if let Some(rest) = key.strip_prefix("text_") {
+                if let Some(name) = rest.strip_suffix(suffix) {
+                    if name.is_empty() {
+                        continue;
+                    }
+                    let prefix = format!("text_{}", name);
+                    let content = config.get(key).cloned().unwrap_or_default();
+                    let mut style = WidgetStyle::default();
+                    Self::parse_widget_style(config, &prefix, &mut style);
+
+                    widgets.insert(
+                        name.to_string(),
+                        TextWidget { content, style },
+                    );
+                }
+            }
+        }
+        widgets
     }
 
     /// Parse `{prefix}_fg`, `{prefix}_bg`, `{prefix}_attr`, `{prefix}_separator`
