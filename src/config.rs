@@ -365,6 +365,33 @@ pub(crate) struct HudConfig {
     /// Per-mode accent color (palette name or hex). Widgets using "accent"
     /// resolve to this map at render time based on the current mode.
     pub(crate) mode_accent: HashMap<InputMode, String>,
+
+    // --- v3 widget styles (coexist with old color_* fields during transition) ---
+
+    /// Mode widget style.
+    pub(crate) mode_style: WidgetStyle,
+    /// Per-mode display content (e.g., "󰍀 NORMAL").
+    pub(crate) mode_content: HashMap<InputMode, String>,
+
+    /// Session widget style.
+    pub(crate) session_style: WidgetStyle,
+    /// Session format template. Placeholder: {name}.
+    pub(crate) session_format: String,
+
+    /// Active tab style.
+    pub(crate) tab_active_style: WidgetStyle,
+    /// Inactive tab style.
+    pub(crate) tab_inactive_style: WidgetStyle,
+    /// Tab format template. Placeholders: {name}, {index}, {sync_indicator}, {fullscreen_indicator}.
+    pub(crate) tab_format: String,
+    /// Separator between individual tabs.
+    pub(crate) tab_divider: String,
+    /// Sync indicator text (shown conditionally).
+    pub(crate) tab_sync_indicator: String,
+    /// Fullscreen indicator text (shown conditionally).
+    pub(crate) tab_fullscreen_indicator: String,
+    /// Separator after the tabs widget.
+    pub(crate) tabs_separator: String,
 }
 
 impl HudConfig {
@@ -479,6 +506,34 @@ impl HudConfig {
             timezone_offset: 0,
             use_system_theme: false,
             mode_accent,
+
+            // v3 widget styles
+            mode_style: WidgetStyle::new("bg", "accent", "bold", ""),
+            mode_content: HashMap::from([
+                (InputMode::Normal, "󰍀 NORMAL".to_string()),
+                (InputMode::Locked, "󰌾 LOCKED".to_string()),
+                (InputMode::Pane, "󰘖 PANE".to_string()),
+                (InputMode::Tab, "󰓩 TAB".to_string()),
+                (InputMode::Resize, "󰩨 RESIZE".to_string()),
+                (InputMode::Move, "󰆾 MOVE".to_string()),
+                (InputMode::Scroll, "󰠶 SCROLL".to_string()),
+                (InputMode::Search, "󰍉 SEARCH".to_string()),
+                (InputMode::EnterSearch, "󰍉 SEARCH".to_string()),
+                (InputMode::RenameTab, "󰏫 RENAME TAB".to_string()),
+                (InputMode::RenamePane, "󰏫 RENAME PANE".to_string()),
+                (InputMode::Session, "󱂬 SESSION".to_string()),
+                (InputMode::Prompt, "󰘥 PROMPT".to_string()),
+                (InputMode::Tmux, "󰰣 TMUX".to_string()),
+            ]),
+            session_style: WidgetStyle::new("cyan", "", "", ""),
+            session_format: "󰆍 {name}".to_string(),
+            tab_active_style: WidgetStyle::new("white", "blue", "bold", ""),
+            tab_inactive_style: WidgetStyle::new("dim", "", "", ""),
+            tab_format: "{name}".to_string(),
+            tab_divider: " ".to_string(),
+            tab_sync_indicator: "🔗".to_string(),
+            tab_fullscreen_indicator: "⛶".to_string(),
+            tabs_separator: String::new(),
         };
 
         // Apply color_* overrides (hex or palette name)
@@ -554,6 +609,55 @@ impl HudConfig {
             }
         }
 
+        // v3 widget style overrides
+        Self::parse_widget_style(config, "mode", &mut hud.mode_style);
+        Self::parse_widget_style(config, "session", &mut hud.session_style);
+        Self::parse_widget_style(config, "tab_active", &mut hud.tab_active_style);
+        Self::parse_widget_style(config, "tab_inactive", &mut hud.tab_inactive_style);
+
+        // v3 per-mode content overrides
+        let mode_content_map = [
+            ("mode_normal", InputMode::Normal),
+            ("mode_locked", InputMode::Locked),
+            ("mode_pane", InputMode::Pane),
+            ("mode_tab", InputMode::Tab),
+            ("mode_resize", InputMode::Resize),
+            ("mode_move", InputMode::Move),
+            ("mode_scroll", InputMode::Scroll),
+            ("mode_search", InputMode::Search),
+            ("mode_enter_search", InputMode::EnterSearch),
+            ("mode_rename_tab", InputMode::RenameTab),
+            ("mode_rename_pane", InputMode::RenamePane),
+            ("mode_session", InputMode::Session),
+            ("mode_prompt", InputMode::Prompt),
+            ("mode_tmux", InputMode::Tmux),
+        ];
+        for (key, mode) in &mode_content_map {
+            if let Some(v) = config.get(*key) {
+                hud.mode_content.insert(*mode, v.clone());
+            }
+        }
+
+        // v3 session/tab format overrides
+        if let Some(v) = config.get("session_format") {
+            hud.session_format = v.clone();
+        }
+        if let Some(v) = config.get("tab_format") {
+            hud.tab_format = v.clone();
+        }
+        if let Some(v) = config.get("tab_divider") {
+            hud.tab_divider = v.clone();
+        }
+        if let Some(v) = config.get("tab_sync_indicator") {
+            hud.tab_sync_indicator = v.clone();
+        }
+        if let Some(v) = config.get("tab_fullscreen_indicator") {
+            hud.tab_fullscreen_indicator = v.clone();
+        }
+        if let Some(v) = config.get("tabs_separator") {
+            hud.tabs_separator = v.clone();
+        }
+
         if let Some(v) = config.get("format_left") {
             hud.format_left = v.clone();
         }
@@ -581,6 +685,27 @@ impl HudConfig {
 
     pub(crate) fn color_for_mode(&self, mode: InputMode) -> &Color {
         self.mode_colors.get(&mode).unwrap_or(&self.color_mode)
+    }
+
+    /// Parse `{prefix}_fg`, `{prefix}_bg`, `{prefix}_attr`, `{prefix}_separator`
+    /// from config into a WidgetStyle, overriding only keys that are present.
+    fn parse_widget_style(
+        config: &BTreeMap<String, String>,
+        prefix: &str,
+        style: &mut WidgetStyle,
+    ) {
+        if let Some(v) = config.get(&format!("{}_fg", prefix)) {
+            style.fg = v.clone();
+        }
+        if let Some(v) = config.get(&format!("{}_bg", prefix)) {
+            style.bg = v.clone();
+        }
+        if let Some(v) = config.get(&format!("{}_attr", prefix)) {
+            style.attr = v.clone();
+        }
+        if let Some(v) = config.get(&format!("{}_separator", prefix)) {
+            style.separator = v.clone();
+        }
     }
 
     /// Resolve a palette name or hex string into a `Color`.
