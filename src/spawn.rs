@@ -34,8 +34,9 @@ impl State {
             return;
         }
 
+        let border = self.hud_config.tooltip_border;
         let (tt_rows, tt_cols) = match &self.mode_info {
-            Some(mi) => tooltip_size(mi, active_mode),
+            Some(mi) => tooltip_size(mi, active_mode, border),
             None => return,
         };
         if tt_rows == 0 || tt_cols == 0 {
@@ -103,12 +104,28 @@ impl State {
         tt_cols: usize,
     ) -> FloatingPaneCoordinates {
         let (rows, cols) = self.display_area();
+        let position = &self.hud_config.tooltip_position;
+        let border = self.hud_config.tooltip_border;
 
         let hud_height = if self.enable_status_bar { 1 } else { 0 };
         let width = tt_cols.min(cols);
         let height = tt_rows.min(rows.saturating_sub(hud_height));
-        let x = cols.saturating_sub(width);
-        let y = rows.saturating_sub(hud_height + height);
+
+        let (x, y) = match position.as_str() {
+            "bottom-left" => {
+                (0, rows.saturating_sub(hud_height + height))
+            }
+            "top-right" => {
+                (cols.saturating_sub(width), 0)
+            }
+            "top-left" => {
+                (0, 0)
+            }
+            // "bottom-right" (default)
+            _ => {
+                (cols.saturating_sub(width), rows.saturating_sub(hud_height + height))
+            }
+        };
 
         FloatingPaneCoordinates::new(
             Some(format!("{}", x)),
@@ -116,7 +133,7 @@ impl State {
             Some(format!("{}", width)),
             Some(format!("{}", height)),
             Some(true),
-            None,
+            if border { None } else { Some(true) },
         )
         .unwrap_or_default()
     }

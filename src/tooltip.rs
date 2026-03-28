@@ -5,8 +5,6 @@ use crate::keybinds::{get_actions_for_mode, ModeActions};
 use crate::render::visible_len;
 use crate::State;
 
-/// Arrow separator between key and description.
-const ARROW: &str = "➜";
 /// Floating pane frame overhead (top + bottom border).
 const FRAME_ROWS: usize = 2;
 /// Floating pane frame overhead (left + right border).
@@ -24,10 +22,11 @@ impl State {
 
         let c = &self.hud_config;
         let reset = "\x1b[0m";
-        let key_color = c.color_tooltip_key.fg();
-        let arrow_color = c.color_tooltip_arrow.fg();
-        let action_color = c.color_tooltip_action.fg();
-        let mode_color = c.color_tooltip_mode.fg();
+        let key_color = c.resolve_color_with_accent(&c.tooltip_key_color, &c.palette, self.mode).fg();
+        let sep_color = c.resolve_color_with_accent(&c.tooltip_separator_color, &c.palette, self.mode).fg();
+        let desc_color = c.resolve_color_with_accent(&c.tooltip_description_color, &c.palette, self.mode).fg();
+        let mode_color = c.resolve_color_with_accent(&c.tooltip_mode_color, &c.palette, self.mode).fg();
+        let separator = &c.tooltip_separator;
 
         let has_common = !ma.common.is_empty();
         let main_rows = if has_common {
@@ -48,10 +47,10 @@ impl State {
             let key_pad = key_width.saturating_sub(action.key.len());
             let icon = action.action_type.icon();
             let desc = &action.description;
-            let desc_color = if action.action_type.is_mode_switch() {
+            let d_color = if action.action_type.is_mode_switch() {
                 &mode_color
             } else {
-                &action_color
+                &desc_color
             };
 
             // Mode switch icon uses per-mode accent color
@@ -63,7 +62,7 @@ impl State {
             };
 
             let line = format!(
-                " {key_color}{key}{reset}{pad} {arrow_color}{ARROW}{reset} {icon_color}{icon}{reset} {desc_color}{desc}{reset}",
+                " {key_color}{key}{reset}{pad} {sep_color}{separator}{reset} {icon_color}{icon}{reset} {d_color}{desc}{reset}",
                 key = action.key,
                 pad = " ".repeat(key_pad),
             );
@@ -81,7 +80,7 @@ impl State {
 
         // Render common (back/exit) keys centered at bottom
         if has_common && row < rows {
-            let dim = c.color_tooltip_arrow.fg();
+            let dim = &sep_color;
             // Collect icons and use the shared description
             let icons: Vec<&str> =
                 ma.common.iter().map(|c| c.icon).collect();
@@ -120,10 +119,13 @@ impl State {
             return;
         }
 
+        let border = self.hud_config.tooltip_border;
         let coords = tooltip_coordinates(
             &ma,
             &self.tabs,
             self.hud_config.enable_status_bar,
+            &self.hud_config.tooltip_position,
+            border,
         );
         change_floating_panes_coordinates(vec![(
             PaneId::Plugin(plugin_id),
@@ -138,23 +140,29 @@ impl State {
             None => return,
         };
 
+        let template = &self.hud_config.tooltip_title;
+        if template.is_empty() {
+            rename_plugin_pane(plugin_id, "");
+            return;
+        }
+
         let mode_name = format!("{:?}", self.mode).to_lowercase();
-        let title = format!("+{}", mode_name);
+        let title = template.replace("{mode}", &mode_name);
         rename_plugin_pane(plugin_id, &title);
     }
 }
 
 /// Calculate tooltip pane size for the initial spawn.
-pub(crate) fn tooltip_size(mode_info: &ModeInfo, mode: InputMode) -> (usize, usize) {
+pub(crate) fn tooltip_size(mode_info: &ModeInfo, mode: InputMode, border: bool) -> (usize, usize) {
     let ma = get_actions_for_mode(mode_info, mode);
     if ma.actions.is_empty() && ma.common.is_empty() {
         return (0, 0);
     }
-    tooltip_dimensions(&ma)
+    tooltip_dimensions(&ma, border)
 }
 
 /// Compute (height, width) including frame for a ModeActions.
-fn tooltip_dimensions(ma: &ModeActions) -> (usize, usize) {
+fn tooltip_dimensions(ma: &ModeActions, border: bool) -> (usize, usize) {
     let key_width = ma
         .actions
         .iter()
@@ -188,7 +196,9 @@ fn tooltip_dimensions(ma: &ModeActions) -> (usize, usize) {
     let content_height =
         ma.actions.len() + if ma.common.is_empty() { 0 } else { 1 };
 
-    (content_height + FRAME_ROWS, content_width + FRAME_COLS)
+    let frame = if border { FRAME_ROWS } else { 0 };
+    let frame_cols = if border { FRAME_COLS } else { 0 };
+    (content_height + frame, content_width + frame_cols)
 }
 
 /// Build FloatingPaneCoordinates for a tooltip.
@@ -196,6 +206,8 @@ fn tooltip_coordinates(
     ma: &ModeActions,
     tabs: &[TabInfo],
     status_bar_enabled: bool,
+    position: &str,
+    border: bool,
 ) -> FloatingPaneCoordinates {
     let (rows, cols) = tabs
         .iter()
@@ -203,12 +215,26 @@ fn tooltip_coordinates(
         .map(|t| (t.display_area_rows, t.display_area_columns))
         .unwrap_or((24, 80));
 
-    let (height, width) = tooltip_dimensions(ma);
+    let (height, width) = tooltip_dimensions(ma, border);
     let hud_height = if status_bar_enabled { 1 } else { 0 };
     let w = width.min(cols);
     let h = height.min(rows.saturating_sub(hud_height));
-    let x = cols.saturating_sub(w);
-    let y = rows.saturating_sub(hud_height + h);
+
+    let (x, y) = match position {
+        "bottom-left" => {
+            (0, rows.saturating_sub(hud_height + h))
+        }
+        "top-right" => {
+            (cols.saturating_sub(w), 0)
+        }
+        "top-left" => {
+            (0, 0)
+        }
+        // "bottom-right" (default)
+        _ => {
+            (cols.saturating_sub(w), rows.saturating_sub(hud_height + h))
+        }
+    };
 
     FloatingPaneCoordinates::new(
         Some(format!("{}", x)),
@@ -216,7 +242,7 @@ fn tooltip_coordinates(
         Some(format!("{}", w)),
         Some(format!("{}", h)),
         Some(true),
-        None,
+        if border { None } else { Some(true) },
     )
     .unwrap_or_default()
 }

@@ -355,11 +355,28 @@ pub(crate) struct HudConfig {
     pub(crate) color_bg: Color,
     /// Separator color (palette name or hex, resolved at render time).
     pub(crate) separator_color: String,
-    pub(crate) color_tooltip_key: Color,
-    pub(crate) color_tooltip_arrow: Color,
-    pub(crate) color_tooltip_action: Color,
-    pub(crate) color_tooltip_mode: Color,
     pub(crate) icon_colors: IconColors,
+    // --- Tooltip settings ---
+    /// Key text color (palette name or hex).
+    pub(crate) tooltip_key_color: String,
+    /// Separator color between key and description.
+    pub(crate) tooltip_separator_color: String,
+    /// Description text color.
+    pub(crate) tooltip_description_color: String,
+    /// Mode-switch description color.
+    pub(crate) tooltip_mode_color: String,
+    /// Tooltip content background (empty = default frame bg).
+    pub(crate) tooltip_bg: String,
+    /// Frame border color.
+    pub(crate) tooltip_border_color: String,
+    /// Separator character between key and description.
+    pub(crate) tooltip_separator: String,
+    /// Position: "bottom-right", "bottom-left", "top-right", "top-left".
+    pub(crate) tooltip_position: String,
+    /// Frame title template. {mode} = current mode name. Empty = no title.
+    pub(crate) tooltip_title: String,
+    /// Whether to show the tooltip border.
+    pub(crate) tooltip_border: bool,
     pub(crate) enable_status_bar: bool,
     pub(crate) enable_tooltip: bool,
     /// Named separator preset (triangle, circle, pipe, slash, backslash).
@@ -444,14 +461,10 @@ impl HudConfig {
 
         // Update resolved color fields; preserve non-color config.
         self.color_bg = rebuilt.color_bg;
-        self.color_tooltip_key = rebuilt.color_tooltip_key;
-        self.color_tooltip_arrow = rebuilt.color_tooltip_arrow;
-        self.color_tooltip_action = rebuilt.color_tooltip_action;
-        self.color_tooltip_mode = rebuilt.color_tooltip_mode;
         self.icon_colors = rebuilt.icon_colors;
         self.palette = rebuilt.palette;
-        // Widget styles use palette names resolved at render time,
-        // so they don't need rebuilding on theme change.
+        // Widget styles and tooltip colors use palette names resolved
+        // at render time, so they don't need rebuilding on theme change.
     }
 
     fn build_from_palette(palette: &ThemePalette, config: &BTreeMap<String, String>) -> Self {
@@ -481,11 +494,17 @@ impl HudConfig {
             format_right: "{cwd} | {memory} | {date} | {time}".to_string(),
             color_bg: color(&palette.bg),
             separator_color: "dim".to_string(),
-            color_tooltip_key: color(&palette.cyan),
-            color_tooltip_arrow: color(&palette.dim),
-            color_tooltip_action: color(&palette.magenta),
-            color_tooltip_mode: color(&palette.blue),
             icon_colors,
+            tooltip_key_color: "cyan".to_string(),
+            tooltip_separator_color: "dim".to_string(),
+            tooltip_description_color: "fg".to_string(),
+            tooltip_mode_color: "accent".to_string(),
+            tooltip_bg: String::new(),
+            tooltip_border_color: "dim".to_string(),
+            tooltip_separator: "➜".to_string(),
+            tooltip_position: "bottom-right".to_string(),
+            tooltip_title: "{mode}".to_string(),
+            tooltip_border: true,
             enable_status_bar: true,
             enable_tooltip: true,
             separator: SeparatorPreset::Triangle,
@@ -540,20 +559,26 @@ impl HudConfig {
             hud.separator_color = v.clone();
         }
 
-        // Tooltip color overrides (still use resolved Color)
-        macro_rules! color_override {
+        // Tooltip config overrides
+        macro_rules! string_override {
             ($key:expr, $field:expr) => {
                 if let Some(v) = config.get($key) {
-                    if let Some(c) = Self::resolve_color(v, palette) {
-                        $field = c;
-                    }
+                    $field = v.clone();
                 }
             };
         }
-        color_override!("color_tooltip_key", hud.color_tooltip_key);
-        color_override!("color_tooltip_arrow", hud.color_tooltip_arrow);
-        color_override!("color_tooltip_action", hud.color_tooltip_action);
-        color_override!("color_tooltip_mode", hud.color_tooltip_mode);
+        string_override!("tooltip_key_color", hud.tooltip_key_color);
+        string_override!("tooltip_separator_color", hud.tooltip_separator_color);
+        string_override!("tooltip_description_color", hud.tooltip_description_color);
+        string_override!("tooltip_mode_color", hud.tooltip_mode_color);
+        string_override!("tooltip_bg", hud.tooltip_bg);
+        string_override!("tooltip_border_color", hud.tooltip_border_color);
+        string_override!("tooltip_separator", hud.tooltip_separator);
+        string_override!("tooltip_position", hud.tooltip_position);
+        string_override!("tooltip_title", hud.tooltip_title);
+        if let Some(v) = config.get("tooltip_border") {
+            hud.tooltip_border = v != "false";
+        }
 
         // mode_accent_* overrides (palette name or hex)
         let accent_map = [
