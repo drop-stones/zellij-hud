@@ -728,10 +728,10 @@ impl HudConfig {
                 ("s_gm", tw("\u{e0b2}", "dim",    "")),         // git → memory
                 ("s_mt", tw("\u{e0b2}", "accent", "dim")),      // memory → time
                 // Tab powerline separators (entry/exit arrows)
-                ("ta_in",  tw("\u{e0b0}", "bg",             "tab_active_bg")),
-                ("ta_out", tw("\u{e0b0}", "tab_active_bg",  "bg")),
-                ("ti_in",  tw("\u{e0b0}", "bg",             "tab_inactive_bg")),
-                ("ti_out", tw("\u{e0b0}", "tab_inactive_bg","bg")),
+                ("ta_in",  tw("\u{e0b0}", "bg",      "#484848")),
+                ("ta_out", tw("\u{e0b0}", "#484848", "bg")),
+                ("ti_in",  tw("\u{e0b0}", "bg",      "#282828")),
+                ("ti_out", tw("\u{e0b0}", "#282828", "bg")),
             ],
             _ => vec![
                 ("sep", tw("|", "dim", "")),
@@ -899,8 +899,7 @@ impl HudConfig {
         Color::from_hex(hex)
     }
 
-    /// Resolve a color value that may be "accent", "tab_active_bg",
-    /// "tab_inactive_bg", a palette name, or hex.
+    /// Resolve a color value that may be "accent", a palette name, or hex.
     pub(crate) fn resolve_color_with_accent(
         &self,
         value: &str,
@@ -915,18 +914,6 @@ impl HudConfig {
                 .unwrap_or("blue");
             let hex = palette.resolve(accent_name).unwrap_or(accent_name);
             Color::from_hex(hex).unwrap_or_default()
-        } else if value == "tab_active_bg" {
-            if self.tab_active_style.bg.is_empty() {
-                self.resolve_color_with_accent(&self.bar_bg, palette, mode)
-            } else {
-                self.resolve_color_with_accent(&self.tab_active_style.bg, palette, mode)
-            }
-        } else if value == "tab_inactive_bg" {
-            if self.tab_inactive_style.bg.is_empty() {
-                self.resolve_color_with_accent(&self.bar_bg, palette, mode)
-            } else {
-                self.resolve_color_with_accent(&self.tab_inactive_style.bg, palette, mode)
-            }
         } else {
             Self::resolve_color(value, palette).unwrap_or_default()
         }

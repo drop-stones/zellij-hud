@@ -25,8 +25,8 @@ Single WASM binary (`zellij-tile = "0.44.0"`), three roles distinguished by `Rol
 ### Source files
 
 - `src/main.rs` — Plugin state, `Role` enum, event handling, role dispatch
-- `src/config.rs` — Configuration parsing, `Color` type, `BarStyle`/`SeparatorPreset` enums, `ThemePalette`, theme presets, `IconColors`
-- `src/render.rs` — HUD status bar rendering (minimal + powerline modes)
+- `src/config.rs` — Configuration parsing, `Color` type, `ThemePalette`, theme presets, `WidgetStyle`, `StyleDefaults`
+- `src/render.rs` — Unified HUD status bar rendering (composable widget architecture)
 - `src/tooltip.rs` — Which-key tooltip rendering, dynamic resize
 - `src/keybinds.rs` — Keybinding extraction from `ModeInfo`
 - `src/action_types.rs` — `ActionType` categorization for icon colors
@@ -55,9 +55,11 @@ Single WASM binary (`zellij-tile = "0.44.0"`), three roles distinguished by `Rol
 - `Text` API `color_range()` uses **character indices** (`.chars().count()`), not byte indices
 - `print_text(text)` for theme-colored output with `Text::new().opaque()`
 - `Color` enum (`None`, `Rgb`, `EightBit`) with `.fg()` and `.bg()` methods for ANSI escapes
-- Two bar styles: `BarStyle::Minimal` (flat bg + thin separators) and `BarStyle::Powerline` (per-segment bg + arrow separators)
-- `SeparatorPreset` enum: `Triangle`, `Circle`, `Slant`, `Flame` — each defines minimal (thin) and powerline (thick) separator chars
-- HUD background color: in minimal mode, `\x1b[0m` resets are replaced with `\x1b[0m{bg}` to maintain background across segments
+- Composable widget architecture: all widgets (built-in and user-defined) render through the same uniform pipeline
+- Style presets (`style "minimal"` / `style "powerline"`) control format strings and default text widgets — no rendering branches
+- Separators are regular text widgets composed in format strings, not special-cased rendering logic
+- Style restore mechanism: `resolve_widget_refs` re-applies parent style after each child widget reset
+- HUD background color: `\x1b[0m` resets are replaced with `\x1b[0m{bg}` to maintain background across segments
 
 ### Tab following
 
@@ -80,15 +82,15 @@ Single WASM binary (`zellij-tile = "0.44.0"`), three roles distinguished by `Rol
 
 - Daemon/HUD both need: `ReadApplicationState`, `ChangeApplicationState`, `MessageAndLaunchOtherPlugins`, `RunCommands`
 
-## Configuration Spec (v3)
+## Configuration Spec
 
-Design goals: zjstatus-level flexibility + on-demand display + tooltip = superset of zjstatus.
-Key differentiators from zjstatus: mode accent color (global mode-reactive styling), declarative style keys (no inline `#[...]` syntax), automatic separator color calculation, predefined themes with zero-config defaults.
+Design goals: composable widget architecture with zero rendering branches. All visual differences between styles (minimal, powerline) are expressed purely through config (format strings + widget definitions). No implicit behavior in the render path.
 
 ### Global
 
 ```kdl
 theme "system"              // "system" (default) | "tokyonight" | "catppuccin-mocha" | "nord" | "gruvbox-dark"
+style "minimal"             // "minimal" (default) | "powerline" — preset for format strings, widget styles, and separator widgets
 enable_status_bar "true"
 enable_tooltip "true"
 ```
@@ -96,13 +98,14 @@ enable_tooltip "true"
 ### Layout
 
 ```kdl
-format_left "{mode} {session} {tabs}"
-format_right "{command_git_branch} {command_datetime}"
+format_left "{mode}{sep}{session}{sep}{tabs}"       // minimal default
+format_right "{cwd}{git_branch}{sep}{memory}{sep}{time}"
+bar_bg "bg"                                          // status bar background color
 ```
 
-- Spaces between widgets are ignored (for readability only)
-- Widget ordering is determined by format string
-- Separation between widgets is controlled by each widget's `_separator`
+- `{NAME}` tokens reference built-in or user-defined widgets
+- Widget composition: widgets can reference other widgets in their format templates (recursive, max depth 5)
+- Spaces between tokens in format strings are literal (not ignored)
 
 ### Palette (10 colors, set by theme, individually overridable)
 
@@ -119,7 +122,7 @@ palette_cyan "#7dcfff"
 palette_orange "#ff9e64"
 ```
 
-Color values: palette name (`"blue"`, `"accent"`) or hex (`"#7aa2f7"`).
+Color values: palette name (`"blue"`, `"dim"`), hex (`"#7aa2f7"`), 8-bit (`"8bit:123"`), or `"accent"` (mode-dependent).
 
 ### Mode accent color
 
@@ -144,41 +147,39 @@ mode_accent_tmux "orange"
 
 ### Widget style keys (common pattern)
 
-All widgets share these style keys:
+All widgets share these style keys (3 keys per widget):
 
 ```
 {widget}_fg "{color}"          // foreground: palette name | hex | "accent"
-{widget}_bg "{color}"          // background: same. If set, segment gets its own bg
+{widget}_bg "{color}"          // background: same. Empty = no bg (inherits bar_bg)
 {widget}_attr "{decorations}"  // "bold" | "italic" | "bold,italic" | ""
-{widget}_separator "{char}"    // separator character after this widget (color auto-calculated from adjacent bg)
 ```
-
-When bg is set on a widget, powerline-style rendering is automatic (separator color transitions based on adjacent widgets' bg). No `bar_style` toggle needed.
 
 ### Built-in widgets
 
 #### mode
 
 ```kdl
-mode_fg "bg"
-mode_bg "accent"
+mode_fg "accent"           // minimal default
+mode_bg ""
 mode_attr "bold"
-mode_separator ""
+mode_format " {content} "  // template with {content} placeholder
 
-mode_normal "󰍀 NORMAL"
-mode_locked "󰌾 LOCKED"
-mode_pane "󰘖 PANE"
-mode_tab "󰓩 TAB"
-mode_resize "󰩨 RESIZE"
-mode_move "󰆾 MOVE"
-mode_scroll "󰠶 SCROLL"
-mode_search "󰍉 SEARCH"
-mode_enter_search "󰍉 SEARCH"
-mode_rename_tab "󰏫 RENAME TAB"
-mode_rename_pane "󰏫 RENAME PANE"
-mode_session "󱂬 SESSION"
-mode_prompt "󰘥 PROMPT"
-mode_tmux "󰰣 TMUX"
+// Per-mode display text (new keys; old mode_normal etc. accepted as fallback)
+mode_content_normal "󰍀 NORMAL"
+mode_content_locked "󰌾 LOCKED"
+mode_content_pane "󰘖 PANE"
+mode_content_tab "󰓩 TAB"
+mode_content_resize "󰩨 RESIZE"
+mode_content_move "󰆾 MOVE"
+mode_content_scroll "󰠶 SCROLL"
+mode_content_search "󰍉 SEARCH"
+mode_content_enter_search "󰍉 SEARCH"
+mode_content_rename_tab "󰏫 RENAME TAB"
+mode_content_rename_pane "󰏫 RENAME PANE"
+mode_content_session "󱂬 SESSION"
+mode_content_prompt "󰘥 PROMPT"
+mode_content_tmux "󰰣 TMUX"
 ```
 
 #### session
@@ -186,112 +187,111 @@ mode_tmux "󰰣 TMUX"
 ```kdl
 session_fg "cyan"
 session_bg ""
-session_separator ""
-session_format "󰆍 {name}"
+session_attr ""
+session_format " 󰆍 {name} "   // template with {name} placeholder
 ```
-
-Placeholders: `{name}`
 
 #### tabs
 
 ```kdl
-tab_active_fg "white"
-tab_active_bg "blue"
+tab_active_fg "fg"
+tab_active_bg ""
 tab_active_attr "bold"
 tab_inactive_fg "dim"
 tab_inactive_bg ""
-tab_format "{name}"
-tab_divider " "
+tab_inactive_attr ""
+tab_format " {name}"              // sets both active and inactive (fallback)
+tab_active_format " {name}"      // overrides tab_format for active tabs
+tab_inactive_format " {name}"    // overrides tab_format for inactive tabs
 tab_sync_indicator "🔗"
 tab_fullscreen_indicator "⛶"
-tabs_separator ""
 ```
 
-Placeholders: `{name}`, `{index}`, `{sync_indicator}`, `{fullscreen_indicator}`
+Placeholders: `{name}`, `{index}`, `{sync_indicator}`, `{fullscreen_indicator}`, plus `{WIDGET_NAME}` refs.
 
-`tab_divider`: separator character between individual tabs (color auto-calculated from adjacent tabs' bg, same as widget separator).
+Tab formats support widget references for powerline arrows (e.g., `"{ta_in} {name} {ta_out}"`).
+
+#### cwd
+
+```kdl
+cwd_fg "cyan"
+cwd_bg ""
+cwd_attr ""
+cwd_format " 󰉋 {cwd} "   // template with {cwd} placeholder
+```
 
 ### User-defined widgets
 
-#### command (shell command execution)
+#### command widget (shell command execution)
 
 ```kdl
-command_NAME_command "..."
-command_NAME_fg "..."
-command_NAME_bg ""
-command_NAME_attr ""
-command_NAME_separator ""
-command_NAME_format "{stdout}"
-command_NAME_interval "10"
+NAME_command "..."          // shell command to run
+NAME_fg "..."
+NAME_bg ""
+NAME_attr ""
+NAME_format "{stdout}"      // template with {stdout}, {exit_code} placeholders
+NAME_interval "10"          // execution interval in seconds
 ```
 
-Placeholders: `{stdout}`, `{stderr}`, `{exit_code}`
+Hidden when command fails (exit_code != 0) or stdout is empty.
 
-Referenced in format strings as `{command_NAME}`.
+Legacy `command_NAME_*` prefix also accepted for backward compat.
 
-Example — datetime and git branch as commands:
-```kdl
-command_datetime_command "date +%H:%M"
-command_datetime_fg "yellow"
-command_datetime_format "󰥔 {stdout}"
-command_datetime_interval "1"
+**Preset command widgets** (overridable): `time`, `date`, `memory`, `git_branch`
 
-command_git_branch_command "git rev-parse --abbrev-ref HEAD"
-command_git_branch_fg "magenta"
-command_git_branch_format " {stdout}"
-command_git_branch_interval "10"
-```
-
-#### text (static text)
+#### text widget (static text)
 
 ```kdl
-text_NAME_content "🚀 dev"
-text_NAME_fg "cyan"
-text_NAME_bg ""
-text_NAME_separator ""
+NAME_content "..."          // static content string
+NAME_fg "..."
+NAME_bg ""
+NAME_attr ""
+NAME_format "{content}"     // template with {content} placeholder
 ```
 
-Referenced as `{text_NAME}`.
+Legacy `text_NAME_*` prefix also accepted for backward compat.
+
+**Preset text widgets** (defined by style preset, overridable):
+- minimal: `sep` (thin `|` divider)
+- powerline: `s_ms`, `s_sb`, `s_cg`, `s_gm`, `s_mt` (segment separators), `ta_in`, `ta_out`, `ti_in`, `ti_out` (tab arrows)
+
+#### Widget type detection
+
+- `NAME_command` key present → command widget
+- `NAME_content` key present → text widget
+- Widget names must not match reserved prefixes: `mode`, `session`, `tab_active`, `tab_inactive`, `tabs`, `cwd`, `bar`, `tooltip`, `palette`, `format`, `enable`, `theme`, `style`, `base_mode`, `mode_accent`, `mode_content`
 
 ### Tooltip
 
-Tooltip uses `_color` (not `_fg`) because tooltip elements are text on a shared background — no per-element bg.
-
 ```kdl
-// Colors (6 keys)
-tooltip_key_color "cyan"              // keybinding key text
-tooltip_separator_color "dim"         // separator between key and description
-tooltip_description_color "fg"        // action description text
-tooltip_mode_color "accent"           // description for mode-switch actions
-tooltip_bg ""                         // tooltip content background
-tooltip_border_color "dim"            // frame border color (via set_pane_color API)
-
-// Display (4 keys)
-tooltip_separator "➜"                 // character between key and description
-tooltip_position "bottom-right"       // "bottom-right" | "bottom-left" | "top-right" | "top-left"
-tooltip_title "{mode}"                // frame title. empty = no title
-tooltip_border "true"                 // true | false (borderless via v0.44.0 API)
+tooltip_key_color "cyan"
+tooltip_separator_color "dim"
+tooltip_description_color "fg"
+tooltip_mode_color "accent"
+tooltip_bg ""
+tooltip_border_color "dim"
+tooltip_separator "➜"
+tooltip_position "bottom-right"    // "bottom-right" | "bottom-left" | "top-right" | "top-left"
+tooltip_title "{mode}"
+tooltip_border "true"
 ```
-
-Border control uses `FloatingPaneCoordinates::borderless` at spawn time and `set_pane_color()` for frame color.
 
 ### Key count
 
 | Category | Keys |
 |---|---|
-| Global | 3 |
-| Layout | 2 |
+| Global | 4 (theme, style, enable_status_bar, enable_tooltip) |
+| Layout | 3 (format_left, format_right, bar_bg) |
 | Palette | 10 |
-| Mode accent | 13 |
-| mode widget | 17 (4 style + 13 content) |
-| session | 4 |
-| tabs | 10 |
-| command (per NAME) | 7 |
-| text (per NAME) | 4 |
+| Mode accent | 14 |
+| mode widget | 18 (3 style + 1 format + 14 content) |
+| session | 4 (3 style + 1 format) |
+| tabs | 9 (6 style + 3 format/indicator) |
+| cwd | 4 (3 style + 1 format) |
+| command (per NAME) | 6 |
+| text (per NAME) | 5 |
 | tooltip | 10 |
-| **Total** | **~69 + 11/user-defined** |
-
-Most keys have sensible defaults from theme. Users typically write only a few.
+| **Total** | **~76 + 6-11/user-defined widget** |
 
 ### Base mode detection
 
@@ -300,43 +300,26 @@ Most keys have sensible defaults from theme. Users typically write only a few.
 
 ### Theme presets
 
-Themes provide: palette colors + default widget styles (fg/bg/attr/separator for all widgets) + mode accent colors.
+Themes provide: palette colors + mode accent colors. Style presets provide: format strings + widget styles + default text widgets.
 
-Available: system (default, uses zellij's palette), tokyonight, catppuccin-mocha, nord, gruvbox-dark.
+Available themes: system (default, uses zellij's palette), tokyonight, catppuccin-mocha, nord, gruvbox-dark.
 
 System theme: `bg` = `ribbon_unselected.base` (maps to `palette.black` in zellij).
 
 ## TODO
 
-### Eliminate implicit behavior in rendering
+### Rendering
 
-All rendering behavior must be driven by explicit user config. No implicit mode switching.
+- [ ] **Positional color references**: Allow widgets to reference adjacent widgets' colors (e.g., `current_bg`, `right_bg`) for separator definitions. Would make powerline separators fully generic without hardcoded color values. `current_bg` = the bg of the parent widget containing this widget ref. `right_bg` = the bg of the next widget in the same format string. Requires 2-pass rendering (first pass resolves widget bg colors, second pass renders with positional refs). Complexity: empty widgets (e.g., git_branch outside a repo) must be skipped when resolving adjacency, and nested contexts (widget refs inside tab formats) make "adjacent" ambiguous.
 
-- [ ] **Widget padding**: Currently `bg.is_empty()` implicitly toggles between `content` (no bg) and ` content ` (with bg). Add explicit padding config per widget, or let content templates include their own spaces.
-- [ ] **`{mode}` always padded**: `{mode}` hardcodes ` content ` regardless of bg. Should follow the same rule as other widgets.
-- [ ] **`{tabs}` special-case padding in `render_format`**: Checks `seg.placeholder == "{tabs}"` to decide padding. Should be uniform with other widgets.
-- [ ] **`tabs_have_bg` two-path rendering**: `render_tabs()` switches between triangle-gap and flat-divider based on `tab_active_style.bg.is_empty()`. This is the old `is_powerline()` renamed. Add `tab_divider_fg`, `tab_divider_bg` config keys so tab separators are fully explicit.
-- [ ] **Triangle gap dynamic colors**: The double-triangle gap (`prev▶bar▶cur`) computes fg from adjacent tabs' bg. Needs design decision on how to make this explicit.
-
-### Status bar customization
-
-- [ ] Predefined theme configs (provide good defaults for powerline and minimal styles)
-
-### Tooltip customization
+### Tooltip
 
 - [ ] Multi-column layout (future: `tooltip_columns "auto"`)
 
-### Done
+### Documentation
 
-- [x] Implement config spec v3 (widget style keys, accent color, command/text widgets)
-- [x] Implement tooltip config spec (colors, separator, position, border, title)
-- [x] Powerline-style segments: `BarStyle::Powerline` with per-segment bg colors, arrow separators, and `SeparatorPreset` enum
-- [x] Named separator presets: `Triangle`, `Circle`, `Slant`, `Flame` with minimal/powerline variants
-- [x] Color type refactor: unified `Color` enum with `.fg()`/`.bg()` methods, replacing raw ANSI strings
-- [x] HUD background color: added `bg` palette color and `color_bg` for solid status bar background
-- [x] Borderless HUD: use `FloatingPaneCoordinates::borderless` for single-line HUD (zellij 0.44.0)
-- [x] zellij 0.44.0 migration: updated Action enum to struct variants, zellij-tile 0.44.0
-- [x] Theme-aware colors: use `mode_info.style.colors` for dynamic color mapping
+- [ ] Update `README.md` with current configuration spec and usage examples
+- [ ] Update `../zellij-hud.wiki/` (Configuration.md, Architecture.md, etc.) to reflect composable widget architecture and current config keys
 
 ## Upstream proposals (zellij)
 
