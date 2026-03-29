@@ -52,20 +52,29 @@ pub(crate) struct WidgetStyle {
     pub(crate) bg: String,
     /// Text decorations: "bold", "italic", "bold,italic", or "".
     pub(crate) attr: String,
-    /// Separator character placed after this widget (color auto-calculated).
+    /// Separator character after this widget. Can be a literal char,
+    /// or "thick"/"thin" sentinel resolved via SeparatorPreset + direction.
     pub(crate) separator: String,
+    /// Separator foreground color. Empty = no fg.
+    pub(crate) separator_fg: String,
+    /// Separator background color. Empty = no bg.
+    pub(crate) separator_bg: String,
 }
 
 impl WidgetStyle {
-    pub(crate) fn new(fg: &str, bg: &str, attr: &str, separator: &str) -> Self {
+    pub(crate) fn new(
+        fg: &str, bg: &str, attr: &str,
+        separator: &str, separator_fg: &str, separator_bg: &str,
+    ) -> Self {
         Self {
             fg: fg.to_string(),
             bg: bg.to_string(),
             attr: attr.to_string(),
             separator: separator.to_string(),
+            separator_fg: separator_fg.to_string(),
+            separator_bg: separator_bg.to_string(),
         }
     }
-
 }
 
 /// Named separator preset. Defines characters for both minimal and powerline modes.
@@ -131,6 +140,9 @@ impl SeparatorPreset {
     }
 }
 
+/// Per-widget style defaults: (fg, bg, attr, separator, separator_fg, separator_bg).
+type WStyle = (&'static str, &'static str, &'static str, &'static str, &'static str, &'static str);
+
 /// Style preset for the status bar and tooltip.
 /// Provides default widget styles; user overrides apply on top.
 struct StyleDefaults {
@@ -138,58 +150,52 @@ struct StyleDefaults {
     format_right: &'static str,
     separator: SeparatorPreset,
     bar_bg: &'static str,
-    separator_color: &'static str,
-    mode_style: (&'static str, &'static str, &'static str),   // (fg, bg, attr)
-    session_style: (&'static str, &'static str, &'static str),
-    tab_active_style: (&'static str, &'static str, &'static str),
-    tab_inactive_style: (&'static str, &'static str, &'static str),
-    cwd_style: (&'static str, &'static str, &'static str),
-    date_style: (&'static str, &'static str, &'static str),
-    time_style: (&'static str, &'static str, &'static str),
-    memory_style: (&'static str, &'static str, &'static str),
-    git_branch_style: (&'static str, &'static str, &'static str),
+    mode_style: WStyle,
+    session_style: WStyle,
+    tab_active_style: WStyle,
+    tab_inactive_style: WStyle,
+    cwd_style: WStyle,
+    date_style: WStyle,
+    time_style: WStyle,
+    memory_style: WStyle,
+    git_branch_style: WStyle,
 }
 
 impl StyleDefaults {
     fn from_name(name: &str) -> Self {
         match name {
+            //                          (fg,       bg,        attr,   sep,     sep_fg,  sep_bg)
+            //                          (fg,       bg,        attr,   sep,     sep_fg,  sep_bg)
             "powerline" => Self {
                 format_left: "{mode}{session}{tabs}",
                 format_right: "{cwd}{git_branch}{memory}{time}",
                 separator: SeparatorPreset::Triangle,
                 bar_bg: "bg",
-                separator_color: "",
-                // Outermost: inverted accent
-                mode_style: ("bg", "accent", "bold"),
-                // Next layer: dim bg, accent fg
-                session_style: ("accent", "dim", ""),
-                // Inner: both tabs have bg for powerline separator transitions
-                tab_active_style: ("fg", "#484848", "bold"),
-                tab_inactive_style: ("dim", "#282828", ""),
-                cwd_style: ("cyan", "", ""),
-                git_branch_style: ("orange", "", ""),
-                // Next layer (right): dim bg, accent fg
-                memory_style: ("accent", "dim", ""),
-                // Outermost (right): inverted accent
-                date_style: ("bg", "accent", ""),
-                time_style: ("bg", "accent", ""),
+                mode_style:         ("bg",     "accent",  "bold", "thick", "accent", "dim"),
+                session_style:      ("accent", "dim",     "",     "thick", "dim",    "bg"),
+                tab_active_style:   ("fg",     "#484848", "bold", "",      "",       ""),
+                tab_inactive_style: ("dim",    "#282828", "",     "",      "",       ""),
+                cwd_style:          ("cyan",   "",        "",     "thin",  "dim",    ""),
+                git_branch_style:   ("orange", "",        "",     "thin",  "dim",    ""),
+                memory_style:       ("accent", "dim",     "",     "thick", "dim",    "accent"),
+                date_style:         ("bg",     "accent",  "",     "",      "",       ""),
+                time_style:         ("bg",     "accent",  "",     "",      "",       ""),
             },
-            // "minimal" (default): flat look, single bar bg, fg-only widgets, pipe separators
+            // "minimal" (default): flat look, pipe separators between widgets
             _ => Self {
-                format_left: "{mode} | {session} | {tabs}",
-                format_right: "{cwd} | {git_branch} | {memory} | {time}",
+                format_left: "{mode}{session}{tabs}",
+                format_right: "{cwd}{git_branch}{memory}{time}",
                 separator: SeparatorPreset::Pipe,
                 bar_bg: "bg",
-                separator_color: "dim",
-                mode_style: ("accent", "", "bold"),
-                session_style: ("cyan", "", ""),
-                tab_active_style: ("fg", "", "bold"),
-                tab_inactive_style: ("dim", "", ""),
-                cwd_style: ("cyan", "", ""),
-                date_style: ("magenta", "", ""),
-                time_style: ("blue", "", ""),
-                memory_style: ("green", "", ""),
-                git_branch_style: ("orange", "", ""),
+                mode_style:         ("accent", "",  "bold", "thin", "dim", ""),
+                session_style:      ("cyan",   "",  "",     "thin", "dim", ""),
+                tab_active_style:   ("fg",     "",  "bold", "",     "",    ""),
+                tab_inactive_style: ("dim",    "",  "",     "",     "",    ""),
+                cwd_style:          ("cyan",   "",  "",     "thin", "dim", ""),
+                git_branch_style:   ("orange", "",  "",     "thin", "dim", ""),
+                memory_style:       ("green",  "",  "",     "thin", "dim", ""),
+                date_style:         ("magenta","",  "",     "thin", "dim", ""),
+                time_style:         ("blue",   "",  "",     "",     "",    ""),
             },
         }
     }
@@ -413,8 +419,6 @@ pub(crate) struct HudConfig {
     pub(crate) format_right: String,
     /// HUD bar background color (palette name or hex, resolved at render time).
     pub(crate) bar_bg: String,
-    /// Separator color (palette name or hex, resolved at render time).
-    pub(crate) separator_color: String,
     pub(crate) icon_colors: IconColors,
     // --- Tooltip settings ---
     /// Key text color (palette name or hex).
@@ -520,6 +524,7 @@ impl HudConfig {
     }
 
     fn build_from_palette(palette: &ThemePalette, config: &BTreeMap<String, String>) -> Self {
+        let ws = |s: WStyle| WidgetStyle::new(s.0, s.1, s.2, s.3, s.4, s.5);
         let style_name = config.get("style").map(|s| s.as_str()).unwrap_or("minimal");
         let sd = StyleDefaults::from_name(style_name);
         let icon_colors = IconColors::from_palette(palette);
@@ -545,7 +550,6 @@ impl HudConfig {
             format_left: sd.format_left.to_string(),
             format_right: sd.format_right.to_string(),
             bar_bg: sd.bar_bg.to_string(),
-            separator_color: sd.separator_color.to_string(),
             icon_colors,
             tooltip_key_color: "cyan".to_string(),
             tooltip_separator_color: "dim".to_string(),
@@ -564,7 +568,7 @@ impl HudConfig {
             mode_accent,
 
             // v3 widget styles (defaults from style preset)
-            mode_style: WidgetStyle::new(sd.mode_style.0, sd.mode_style.1, sd.mode_style.2, ""),
+            mode_style: ws(sd.mode_style),
             mode_content: HashMap::from([
                 (InputMode::Normal, "󰍀 NORMAL".to_string()),
                 (InputMode::Locked, "󰌾 LOCKED".to_string()),
@@ -581,16 +585,16 @@ impl HudConfig {
                 (InputMode::Prompt, "󰘥 PROMPT".to_string()),
                 (InputMode::Tmux, "󰰣 TMUX".to_string()),
             ]),
-            session_style: WidgetStyle::new(sd.session_style.0, sd.session_style.1, sd.session_style.2, ""),
+            session_style: ws(sd.session_style),
             session_format: "󰆍 {name}".to_string(),
-            tab_active_style: WidgetStyle::new(sd.tab_active_style.0, sd.tab_active_style.1, sd.tab_active_style.2, ""),
-            tab_inactive_style: WidgetStyle::new(sd.tab_inactive_style.0, sd.tab_inactive_style.1, sd.tab_inactive_style.2, ""),
+            tab_active_style: ws(sd.tab_active_style),
+            tab_inactive_style: ws(sd.tab_inactive_style),
             tab_format: "{name}".to_string(),
             tab_divider: " ".to_string(),
             tab_sync_indicator: "🔗".to_string(),
             tab_fullscreen_indicator: "⛶".to_string(),
             tabs_separator: String::new(),
-            cwd_style: WidgetStyle::new(sd.cwd_style.0, sd.cwd_style.1, sd.cwd_style.2, ""),
+            cwd_style: ws(sd.cwd_style),
             command_widgets: HashMap::new(),
             text_widgets: HashMap::new(),
             palette: palette.clone(),
@@ -600,11 +604,6 @@ impl HudConfig {
         if let Some(v) = config.get("bar_bg") {
             hud.bar_bg = v.clone();
         }
-        // Separator color override
-        if let Some(v) = config.get("separator_color") {
-            hud.separator_color = v.clone();
-        }
-
         // Tooltip config overrides
         macro_rules! string_override {
             ($key:expr, $field:expr) => {
@@ -678,7 +677,7 @@ impl HudConfig {
             }
         }
 
-        // v3 session/tab format overrides
+        // v3 format overrides
         if let Some(v) = config.get("session_format") {
             hud.session_format = v.clone();
         }
@@ -710,25 +709,25 @@ impl HudConfig {
         let defaults: Vec<(&str, CommandWidget)> = vec![
             ("time", CommandWidget {
                 command: "date +%H:%M".to_string(),
-                style: WidgetStyle::new(sd.time_style.0, sd.time_style.1, sd.time_style.2, ""),
+                style: ws(sd.time_style),
                 format: "\u{f0954} {stdout}".to_string(),
                 interval: 1,
             }),
             ("date", CommandWidget {
                 command: "date +\"%b %d\"".to_string(),
-                style: WidgetStyle::new(sd.date_style.0, sd.date_style.1, sd.date_style.2, ""),
+                style: ws(sd.date_style),
                 format: "\u{f00ed} {stdout}".to_string(),
                 interval: 60,
             }),
             ("memory", CommandWidget {
                 command: "free | awk '/Mem:/{printf \"%.0f%%\", $3/$2*100}'".to_string(),
-                style: WidgetStyle::new(sd.memory_style.0, sd.memory_style.1, sd.memory_style.2, ""),
+                style: ws(sd.memory_style),
                 format: "\u{f035b} {stdout}".to_string(),
                 interval: 5,
             }),
             ("git_branch", CommandWidget {
                 command: "git rev-parse --abbrev-ref HEAD 2>/dev/null".to_string(),
-                style: WidgetStyle::new(sd.git_branch_style.0, sd.git_branch_style.1, sd.git_branch_style.2, ""),
+                style: ws(sd.git_branch_style),
                 format: "\u{e0a0} {stdout}".to_string(),
                 interval: 10,
             }),
@@ -828,8 +827,8 @@ impl HudConfig {
         widgets
     }
 
-    /// Parse `{prefix}_fg`, `{prefix}_bg`, `{prefix}_attr`, `{prefix}_separator`
-    /// from config into a WidgetStyle, overriding only keys that are present.
+    /// Parse `{prefix}_fg`, `{prefix}_bg`, `{prefix}_attr`, `{prefix}_separator`,
+    /// `{prefix}_separator_fg`, `{prefix}_separator_bg` from config into a WidgetStyle.
     fn parse_widget_style(
         config: &BTreeMap<String, String>,
         prefix: &str,
@@ -846,6 +845,12 @@ impl HudConfig {
         }
         if let Some(v) = config.get(&format!("{}_separator", prefix)) {
             style.separator = v.clone();
+        }
+        if let Some(v) = config.get(&format!("{}_separator_fg", prefix)) {
+            style.separator_fg = v.clone();
+        }
+        if let Some(v) = config.get(&format!("{}_separator_bg", prefix)) {
+            style.separator_bg = v.clone();
         }
     }
 

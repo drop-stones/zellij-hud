@@ -56,6 +56,21 @@ impl State {
         (fg, bg, attr)
     }
 
+    /// Resolve a separator sentinel ("thick"/"thin") or literal char,
+    /// using the SeparatorPreset and direction (is_right).
+    fn resolve_separator_char<'a>(&self, sep: &'a str, is_right: bool) -> &'a str {
+        let preset = self.hud_config.separator;
+        match sep {
+            "thick" => {
+                if is_right { preset.powerline_right() } else { preset.powerline_left() }
+            }
+            "thin" => {
+                if is_right { preset.minimal_right() } else { preset.minimal_left() }
+            }
+            other => other,
+        }
+    }
+
     /// Render a single segment placeholder into styled text.
     pub(crate) fn render_segment(&self, placeholder: &str) -> String {
         let c = &self.hud_config;
@@ -80,105 +95,7 @@ impl State {
                 }
             }
             "{tabs}" => {
-                let powerline = self.is_powerline();
-                let mut out = String::new();
-
-                for (i, tab) in self.tabs.iter().enumerate() {
-                    let style = if tab.active {
-                        &c.tab_active_style
-                    } else {
-                        &c.tab_inactive_style
-                    };
-                    let (fg, bg, attr) = self.style_escapes(style);
-                    let mut content = c.tab_format
-                        .replace("{name}", &tab.name)
-                        .replace("{index}", &(i + 1).to_string());
-                    if tab.is_sync_panes_active {
-                        content = content.replace("{sync_indicator}", &c.tab_sync_indicator);
-                    } else {
-                        content = content.replace("{sync_indicator}", "");
-                    }
-                    if tab.is_fullscreen_active {
-                        content = content.replace("{fullscreen_indicator}", &c.tab_fullscreen_indicator);
-                    } else {
-                        content = content.replace("{fullscreen_indicator}", "");
-                    }
-
-                    if powerline {
-                        {
-                            let bar_bg_c = c.resolve_color_with_accent(&c.bar_bg, &c.palette, self.mode);
-                            let thick = c.separator.powerline_left();
-
-                            if i == 0 {
-                                // Triangle space before first tab (same as inter-tab gap)
-                                let cur_bg_name = if tab.active {
-                                    &c.tab_active_style.bg
-                                } else {
-                                    &c.tab_inactive_style.bg
-                                };
-                                let cur_bg_name = if cur_bg_name.is_empty() { &c.bar_bg } else { cur_bg_name };
-                                let cur_bg_resolved = c.resolve_color_with_accent(cur_bg_name, &c.palette, self.mode);
-                                out.push_str(&format!(
-                                    "{}{}{thick}{reset}",
-                                    cur_bg_resolved.bg(), bar_bg_c.fg(),
-                                ));
-                            } else {
-                                let cur_bg_name = if tab.active {
-                                    &c.tab_active_style.bg
-                                } else {
-                                    &c.tab_inactive_style.bg
-                                };
-                                let cur_bg_name = if cur_bg_name.is_empty() { &c.bar_bg } else { cur_bg_name };
-                                let prev_active = self.tabs[i - 1].active;
-                                let prev_style = if prev_active { &c.tab_active_style } else { &c.tab_inactive_style };
-                                let prev_bg_name = if prev_style.bg.is_empty() { &c.bar_bg } else { &prev_style.bg };
-
-                                let prev_bg_resolved = c.resolve_color_with_accent(prev_bg_name, &c.palette, self.mode);
-                                let cur_bg_resolved = c.resolve_color_with_accent(cur_bg_name, &c.palette, self.mode);
-
-                                // Two thick separators with bar_bg gap between tabs:
-                                // prev_bg ▶ bar_bg ▶ cur_bg
-                                out.push_str(&format!(
-                                    "{}{}{thick}{}{}{thick}{reset}",
-                                    bar_bg_c.bg(), prev_bg_resolved.fg(),
-                                    cur_bg_resolved.bg(), bar_bg_c.fg(),
-                                ));
-                            }
-                        }
-
-                        if bg.is_empty() {
-                            out.push_str(&format!("{fg}{attr} {content} {reset}"));
-                        } else {
-                            out.push_str(&format!("{bg}{fg}{attr} {content} {reset}"));
-                        }
-                    } else {
-                        if i > 0 {
-                            out.push_str(&c.tab_divider);
-                        }
-                        if bg.is_empty() {
-                            out.push_str(&format!("{fg}{attr}{content}{reset}"));
-                        } else {
-                            out.push_str(&format!("{bg}{fg}{attr} {content} {reset}"));
-                        }
-                    }
-                }
-
-                // Powerline: closing separator after last tab (only if tab bg differs from bar)
-                if powerline {
-                    let last_bg_name = self.tabs.last().map(|t| {
-                        if t.active { &c.tab_active_style.bg } else { &c.tab_inactive_style.bg }
-                    }).unwrap_or(&c.bar_bg);
-                    let last_bg_name = if last_bg_name.is_empty() { &c.bar_bg } else { last_bg_name };
-                    if last_bg_name != &c.bar_bg {
-                        let bar_bg_resolved = c.resolve_color_with_accent(&c.bar_bg, &c.palette, self.mode);
-                        let last_bg_resolved = c.resolve_color_with_accent(last_bg_name, &c.palette, self.mode);
-                        let thick = c.separator.powerline_left();
-                        out.push_str(&format!("{}{}{thick}{reset}",
-                            bar_bg_resolved.bg(), last_bg_resolved.fg()));
-                    }
-                }
-
-                out
+                self.render_tabs()
             }
             "{cwd}" => {
                 let (fg, bg, attr) = self.style_escapes(&c.cwd_style);
@@ -208,6 +125,111 @@ impl State {
                 }
             }
         }
+    }
+
+    /// Render tabs widget with internal separators.
+    fn render_tabs(&self) -> String {
+        let c = &self.hud_config;
+        let reset = "\x1b[0m";
+        let tabs_have_bg = !c.tab_active_style.bg.is_empty() || !c.tab_inactive_style.bg.is_empty();
+        let mut out = String::new();
+
+        for (i, tab) in self.tabs.iter().enumerate() {
+            let style = if tab.active {
+                &c.tab_active_style
+            } else {
+                &c.tab_inactive_style
+            };
+            let (fg, bg, attr) = self.style_escapes(style);
+            let mut content = c.tab_format
+                .replace("{name}", &tab.name)
+                .replace("{index}", &(i + 1).to_string());
+            if tab.is_sync_panes_active {
+                content = content.replace("{sync_indicator}", &c.tab_sync_indicator);
+            } else {
+                content = content.replace("{sync_indicator}", "");
+            }
+            if tab.is_fullscreen_active {
+                content = content.replace("{fullscreen_indicator}", &c.tab_fullscreen_indicator);
+            } else {
+                content = content.replace("{fullscreen_indicator}", "");
+            }
+
+            if tabs_have_bg {
+                // Powerline-style tabs: triangle separators between tabs
+                let bar_bg_c = c.resolve_color_with_accent(&c.bar_bg, &c.palette, self.mode);
+                let thick = c.separator.powerline_left();
+
+                if i == 0 {
+                    // Triangle space before first tab
+                    let cur_bg_name = if tab.active {
+                        &c.tab_active_style.bg
+                    } else {
+                        &c.tab_inactive_style.bg
+                    };
+                    let cur_bg_name = if cur_bg_name.is_empty() { &c.bar_bg } else { cur_bg_name };
+                    let cur_bg_resolved = c.resolve_color_with_accent(cur_bg_name, &c.palette, self.mode);
+                    out.push_str(&format!(
+                        "{}{}{thick}{reset}",
+                        cur_bg_resolved.bg(), bar_bg_c.fg(),
+                    ));
+                } else {
+                    let cur_bg_name = if tab.active {
+                        &c.tab_active_style.bg
+                    } else {
+                        &c.tab_inactive_style.bg
+                    };
+                    let cur_bg_name = if cur_bg_name.is_empty() { &c.bar_bg } else { cur_bg_name };
+                    let prev_active = self.tabs[i - 1].active;
+                    let prev_style = if prev_active { &c.tab_active_style } else { &c.tab_inactive_style };
+                    let prev_bg_name = if prev_style.bg.is_empty() { &c.bar_bg } else { &prev_style.bg };
+
+                    let prev_bg_resolved = c.resolve_color_with_accent(prev_bg_name, &c.palette, self.mode);
+                    let cur_bg_resolved = c.resolve_color_with_accent(cur_bg_name, &c.palette, self.mode);
+
+                    // Two thick separators with bar_bg gap between tabs:
+                    // prev_bg ▶ bar_bg ▶ cur_bg
+                    out.push_str(&format!(
+                        "{}{}{thick}{}{}{thick}{reset}",
+                        bar_bg_c.bg(), prev_bg_resolved.fg(),
+                        cur_bg_resolved.bg(), bar_bg_c.fg(),
+                    ));
+                }
+
+                if bg.is_empty() {
+                    out.push_str(&format!("{fg}{attr} {content} {reset}"));
+                } else {
+                    out.push_str(&format!("{bg}{fg}{attr} {content} {reset}"));
+                }
+            } else {
+                // Flat tabs: simple divider between tabs
+                if i > 0 {
+                    out.push_str(&c.tab_divider);
+                }
+                if bg.is_empty() {
+                    out.push_str(&format!("{fg}{attr}{content}{reset}"));
+                } else {
+                    out.push_str(&format!("{bg}{fg}{attr} {content} {reset}"));
+                }
+            }
+        }
+
+        // Closing separator after last tab (only if tab bg differs from bar)
+        if tabs_have_bg {
+            let last_bg_name = self.tabs.last().map(|t| {
+                if t.active { &c.tab_active_style.bg } else { &c.tab_inactive_style.bg }
+            }).unwrap_or(&c.bar_bg);
+            let last_bg_name = if last_bg_name.is_empty() { &c.bar_bg } else { last_bg_name };
+            if last_bg_name != &c.bar_bg {
+                let bar_bg_resolved = c.resolve_color_with_accent(&c.bar_bg, &c.palette, self.mode);
+                let last_bg_resolved = c.resolve_color_with_accent(last_bg_name, &c.palette, self.mode);
+                let thick = c.separator.powerline_left();
+                out.push_str(&format!("{}{}{thick}{reset}",
+                    bar_bg_resolved.bg(), last_bg_resolved.fg()));
+            }
+        }
+
+        out
     }
 
     /// Render a user-defined command widget.
@@ -257,104 +279,31 @@ impl State {
         }
     }
 
-    /// Get the resolved bg color string for a segment (empty if no bg).
-    fn segment_bg(&self, placeholder: &str) -> String {
+    /// Get the WidgetStyle for a given placeholder (for separator rendering).
+    fn widget_style_for(&self, placeholder: &str) -> Option<&WidgetStyle> {
         let c = &self.hud_config;
-        let style = match placeholder {
-            "{mode}" => &c.mode_style,
-            "{session}" => &c.session_style,
-            "{tabs}" => return String::new(), // tabs have per-tab bg
-            "{cwd}" => &c.cwd_style,
+        match placeholder {
+            "{mode}" => Some(&c.mode_style),
+            "{session}" => Some(&c.session_style),
+            "{tabs}" => None, // tabs handle separators internally
+            "{cwd}" => Some(&c.cwd_style),
             _ => {
-                let name = placeholder.strip_prefix('{').and_then(|s| s.strip_suffix('}'));
-                if let Some(name) = name {
-                    if let Some(txt_name) = name.strip_prefix("text_") {
-                        if let Some(w) = c.text_widgets.get(txt_name) {
-                            &w.style
-                        } else {
-                            return String::new();
-                        }
-                    } else {
-                        let cmd_name = name.strip_prefix("command_").unwrap_or(name);
-                        if let Some(w) = c.command_widgets.get(cmd_name) {
-                            &w.style
-                        } else {
-                            return String::new();
-                        }
-                    }
+                let name = placeholder.strip_prefix('{').and_then(|s| s.strip_suffix('}'))?;
+                if let Some(txt_name) = name.strip_prefix("text_") {
+                    c.text_widgets.get(txt_name).map(|w| &w.style)
                 } else {
-                    return String::new();
+                    let cmd_name = name.strip_prefix("command_").unwrap_or(name);
+                    c.command_widgets.get(cmd_name).map(|w| &w.style)
                 }
             }
-        };
-        if style.bg.is_empty() {
-            String::new()
-        } else {
-            style.bg.clone()
         }
     }
 
-    /// Get the bg color name of the first tab (tabs area = bar_bg).
-    fn first_tab_bg_name(&self) -> &str {
-        &self.hud_config.bar_bg
-    }
-
-    /// Get the bg color name of the last tab (tabs area = bar_bg).
-    fn last_tab_bg_name(&self) -> &str {
-        &self.hud_config.bar_bg
-    }
-
-    /// Check if this is powerline mode (any widget has a bg set).
-    fn is_powerline(&self) -> bool {
-        let c = &self.hud_config;
-        !c.mode_style.bg.is_empty() || !c.session_style.bg.is_empty()
-    }
-
+    /// Unified format renderer. Extracts {placeholder} tokens, renders each segment,
+    /// and draws separators using each widget's separator/separator_fg/separator_bg config.
     pub(crate) fn render_format(&self, format_str: &str, is_right: bool) -> String {
-        if self.is_powerline() {
-            self.render_format_powerline(format_str, is_right)
-        } else {
-            self.render_format_minimal(format_str, is_right)
-        }
-    }
-
-    fn render_format_minimal(&self, format_str: &str, is_right: bool) -> String {
         let c = &self.hud_config;
         let reset = "\x1b[0m";
-        let sep_char = if is_right {
-            c.separator.minimal_right()
-        } else {
-            c.separator.minimal_left()
-        };
-        let sep_color = c.resolve_color_with_accent(&c.separator_color, &c.palette, self.mode);
-        let sep = format!("{}{}{reset}", sep_color.fg(), sep_char);
-
-        let parts: Vec<&str> = format_str.split(" | ").collect();
-        let mut out = String::new();
-
-        for part in &parts {
-            let trimmed = part.trim();
-            let rendered = self.render_segment(trimmed);
-            if rendered.is_empty() {
-                continue;
-            }
-            if !out.is_empty() {
-                out.push_str(&format!(" {sep} "));
-            }
-            out.push_str(&rendered);
-        }
-
-        out
-    }
-
-    fn render_format_powerline(&self, format_str: &str, is_right: bool) -> String {
-        let c = &self.hud_config;
-        let reset = "\x1b[0m";
-        let sep_char = if is_right {
-            c.separator.powerline_right()
-        } else {
-            c.separator.powerline_left()
-        };
 
         // Extract {placeholder} tokens from format string
         let mut placeholders: Vec<String> = Vec::new();
@@ -362,7 +311,7 @@ impl State {
         let chars: Vec<char> = format_str.chars().collect();
         while i < chars.len() {
             if chars[i] == '{' {
-                if let Some(end) = chars[i..].iter().position(|&c| c == '}') {
+                if let Some(end) = chars[i..].iter().position(|&ch| ch == '}') {
                     let token: String = chars[i..=i + end].iter().collect();
                     placeholders.push(token);
                     i += end + 1;
@@ -374,10 +323,10 @@ impl State {
             }
         }
 
+        // Build (rendered_content, style_ref, is_tabs) tuples, skipping empty segments
         struct Segment {
             content: String,
-            bg_name: String,
-            is_tabs: bool,
+            placeholder: String,
         }
 
         let mut segments: Vec<Segment> = Vec::new();
@@ -386,11 +335,9 @@ impl State {
             if rendered.is_empty() {
                 continue;
             }
-            let bg_name = self.segment_bg(ph);
             segments.push(Segment {
                 content: rendered,
-                bg_name,
-                is_tabs: ph == "{tabs}",
+                placeholder: ph.clone(),
             });
         }
 
@@ -398,44 +345,39 @@ impl State {
             return String::new();
         }
 
-        let bar_bg = &c.bar_bg;
         let mut out = String::new();
 
-        for (i, seg) in segments.iter().enumerate() {
-            // {tabs} handles its own powerline separators internally
-            if seg.is_tabs {
-                out.push_str(&seg.content);
-                continue;
-            }
+        for (idx, seg) in segments.iter().enumerate() {
+            let style = self.widget_style_for(&seg.placeholder);
 
-            let prev_bg = if i == 0 {
-                bar_bg
+            // Tabs need padding only when they have no bg.
+            // Tabs with bg handle their own leading/trailing separators internally.
+            let needs_padding = if seg.placeholder == "{tabs}" {
+                c.tab_active_style.bg.is_empty() && c.tab_inactive_style.bg.is_empty()
             } else {
-                let prev = &segments[i - 1];
-                if prev.is_tabs {
-                    self.last_tab_bg_name()
-                } else if prev.bg_name.is_empty() { bar_bg } else { &prev.bg_name }
+                style.map_or(false, |s| s.bg.is_empty())
             };
-            let cur_bg = if seg.bg_name.is_empty() { bar_bg } else { &seg.bg_name };
-
-            // No-bg segments need space padding (bg segments pad internally)
-            let needs_padding = seg.bg_name.is_empty();
 
             if is_right {
-                // Right side: separator comes BEFORE the segment
-                if prev_bg == cur_bg {
-                    if i > 0 {
-                        // Same bg layer: thin separator with dim color
-                        let thin = c.separator.minimal_right();
-                        let dim = c.resolve_color_with_accent("dim", &c.palette, self.mode).fg();
-                        let bg_esc = c.resolve_color_with_accent(cur_bg, &c.palette, self.mode).bg();
-                        out.push_str(&format!("{bg_esc}{dim}{thin}{reset}"));
+                // Right side: separator BEFORE the segment
+                if idx > 0 {
+                    let prev_style = self.widget_style_for(&segments[idx - 1].placeholder);
+                    if let Some(ps) = prev_style {
+                        if !ps.separator.is_empty() {
+                            let sep_char = self.resolve_separator_char(&ps.separator, is_right);
+                            let sep_fg = if ps.separator_fg.is_empty() {
+                                String::new()
+                            } else {
+                                c.resolve_color_with_accent(&ps.separator_fg, &c.palette, self.mode).fg()
+                            };
+                            let sep_bg = if ps.separator_bg.is_empty() {
+                                String::new()
+                            } else {
+                                c.resolve_color_with_accent(&ps.separator_bg, &c.palette, self.mode).bg()
+                            };
+                            out.push_str(&format!("{sep_bg}{sep_fg}{sep_char}{reset}"));
+                        }
                     }
-                } else {
-                    // Different bg: thick powerline arrow
-                    let sep_fg = c.resolve_color_with_accent(cur_bg, &c.palette, self.mode).fg();
-                    let sep_bg = c.resolve_color_with_accent(prev_bg, &c.palette, self.mode).bg();
-                    out.push_str(&format!("{sep_bg}{sep_fg}{sep_char}{reset}"));
                 }
                 if needs_padding { out.push(' '); }
                 out.push_str(&seg.content);
@@ -446,27 +388,28 @@ impl State {
                 out.push_str(&seg.content);
                 if needs_padding { out.push(' '); }
 
-                let next_bg = if i + 1 < segments.len() {
-                    let next = &segments[i + 1];
-                    if next.is_tabs {
-                        self.first_tab_bg_name()
-                    } else if next.bg_name.is_empty() { bar_bg } else { &next.bg_name }
-                } else {
-                    bar_bg
-                };
-                if cur_bg == next_bg {
-                    // Same bg layer: thin separator with dim color
-                    let thin = c.separator.minimal_left();
-                    let dim = c.resolve_color_with_accent("dim", &c.palette, self.mode).fg();
-                    let bg_esc = c.resolve_color_with_accent(cur_bg, &c.palette, self.mode).bg();
-                    out.push_str(&format!("{bg_esc}{dim}{thin}{reset}"));
-                } else {
-                    // Different bg: thick powerline arrow
-                    let sep_fg = c.resolve_color_with_accent(cur_bg, &c.palette, self.mode).fg();
-                    let sep_bg = c.resolve_color_with_accent(next_bg, &c.palette, self.mode).bg();
-                    out.push_str(&format!("{sep_bg}{sep_fg}{sep_char}{reset}"));
+                if let Some(st) = style {
+                    if !st.separator.is_empty() {
+                        let sep_char = self.resolve_separator_char(&st.separator, is_right);
+                        let sep_fg = if st.separator_fg.is_empty() {
+                            String::new()
+                        } else {
+                            c.resolve_color_with_accent(&st.separator_fg, &c.palette, self.mode).fg()
+                        };
+                        let sep_bg = if st.separator_bg.is_empty() {
+                            String::new()
+                        } else {
+                            c.resolve_color_with_accent(&st.separator_bg, &c.palette, self.mode).bg()
+                        };
+                        out.push_str(&format!("{sep_bg}{sep_fg}{sep_char}{reset}"));
+                    }
                 }
             }
+        }
+
+        // Right side: handle the last segment's separator (trailing)
+        if is_right {
+            // No trailing separator needed for rightmost segment
         }
 
         out
