@@ -52,112 +52,35 @@ pub(crate) struct WidgetStyle {
     pub(crate) bg: String,
     /// Text decorations: "bold", "italic", "bold,italic", or "".
     pub(crate) attr: String,
-    /// Separator character after this widget. Can be a literal char,
-    /// or "thick"/"thin" sentinel resolved via SeparatorPreset + direction.
-    pub(crate) separator: String,
-    /// Separator foreground color. Empty = no fg.
-    pub(crate) separator_fg: String,
-    /// Separator background color. Empty = no bg.
-    pub(crate) separator_bg: String,
 }
 
 impl WidgetStyle {
-    pub(crate) fn new(
-        fg: &str, bg: &str, attr: &str,
-        separator: &str, separator_fg: &str, separator_bg: &str,
-    ) -> Self {
+    pub(crate) fn new(fg: &str, bg: &str, attr: &str) -> Self {
         Self {
             fg: fg.to_string(),
             bg: bg.to_string(),
             attr: attr.to_string(),
-            separator: separator.to_string(),
-            separator_fg: separator_fg.to_string(),
-            separator_bg: separator_bg.to_string(),
         }
     }
 }
 
-/// Named separator preset. Defines characters for both minimal and powerline modes.
-#[derive(Clone, Copy, Default)]
-pub(crate) enum SeparatorPreset {
-    #[default]
-    Triangle,
-    Circle,
-    Pipe,
-    Slash,
-    Backslash,
-}
-
-impl SeparatorPreset {
-    pub(crate) fn from_str(s: &str) -> Self {
-        match s {
-            "circle"    => Self::Circle,
-            "pipe"      => Self::Pipe,
-            "slash"     => Self::Slash,
-            "backslash" => Self::Backslash,
-            _           => Self::Triangle,
-        }
-    }
-    /// Thin separator for the left area in minimal mode.
-    pub(crate) fn minimal_left(self) -> &'static str {
-        match self {
-            Self::Triangle  => "\u{e0b1}",
-            Self::Circle    => "\u{e0b5}",
-            Self::Pipe      => "|",
-            Self::Slash     => "\u{e0b9}",
-            Self::Backslash => "\u{e0bd}",
-        }
-    }
-    /// Thin separator for the right area in minimal mode.
-    pub(crate) fn minimal_right(self) -> &'static str {
-        match self {
-            Self::Triangle  => "\u{e0b3}",
-            Self::Circle    => "\u{e0b7}",
-            Self::Pipe      => "|",
-            Self::Slash     => "\u{e0b9}",   // same direction as left
-            Self::Backslash => "\u{e0bd}",   // same direction as left
-        }
-    }
-    /// Thick (filled) separator pointing right (left area, powerline mode).
-    pub(crate) fn powerline_left(self) -> &'static str {
-        match self {
-            Self::Triangle  => "\u{e0b0}",
-            Self::Circle    => "\u{e0b4}",
-            Self::Pipe      => "|",
-            Self::Slash     => "\u{e0b8}",
-            Self::Backslash => "\u{e0bc}",
-        }
-    }
-    /// Thick (filled) separator pointing left (right area, powerline mode).
-    pub(crate) fn powerline_right(self) -> &'static str {
-        match self {
-            Self::Triangle  => "\u{e0b2}",
-            Self::Circle    => "\u{e0b6}",
-            Self::Pipe      => "|",
-            Self::Slash     => "\u{e0ba}",
-            Self::Backslash => "\u{e0be}",
-        }
-    }
-}
-
-/// Per-widget style defaults: (fg, bg, attr, separator, separator_fg, separator_bg).
-type WStyle = (&'static str, &'static str, &'static str, &'static str, &'static str, &'static str);
+/// Per-widget style defaults: (fg, bg, attr).
+type WStyle = (&'static str, &'static str, &'static str);
 
 /// Style preset for the status bar and tooltip.
 /// Provides default widget styles; user overrides apply on top.
 struct StyleDefaults {
     format_left: &'static str,
     format_right: &'static str,
-    separator: SeparatorPreset,
     bar_bg: &'static str,
     mode_format: &'static str,
     mode_style: WStyle,
     session_format: &'static str,
     session_style: WStyle,
-    tab_format: &'static str,
+    tab_active_format: &'static str,
+    tab_inactive_format: &'static str,
     tab_active_style: WStyle,
     tab_inactive_style: WStyle,
-    tab_divider: &'static str,
     cwd_format: &'static str,
     cwd_style: WStyle,
     date_format: &'static str,
@@ -173,55 +96,53 @@ struct StyleDefaults {
 impl StyleDefaults {
     fn from_name(name: &str) -> Self {
         match name {
-            //                          (fg,       bg,        attr,   sep,     sep_fg,  sep_bg)
+            //                          (fg,       bg,        attr)
             "powerline" => Self {
                 format_left: "{mode}{session}{tabs}",
                 format_right: "{cwd}{git_branch}{memory}{time}",
-                separator: SeparatorPreset::Triangle,
                 bar_bg: "bg",
                 mode_format:        " {content} ",
-                mode_style:         ("bg",     "accent",  "bold", "thick", "accent", "dim"),
+                mode_style:         ("bg",     "accent",  "bold"),
                 session_format:     " 󰆍 {name} ",
-                session_style:      ("accent", "dim",     "",     "thick", "dim",    "bg"),
-                tab_format:         " {name} ",
-                tab_active_style:   ("fg",     "#484848", "bold", "",      "",       ""),
-                tab_inactive_style: ("dim",    "#282828", "",     "",      "",       ""),
-                tab_divider: " ",
+                session_style:      ("accent", "dim",     ""),
+                tab_active_format:  " {name} ",
+                tab_inactive_format: " {name} ",
+                tab_active_style:   ("fg",     "#484848", "bold"),
+                tab_inactive_style: ("dim",    "#282828", ""),
                 cwd_format:         " \u{f0256} {cwd} ",
-                cwd_style:          ("cyan",   "",        "",     "thin",  "dim",    ""),
+                cwd_style:          ("cyan",   "",        ""),
                 git_branch_format:  " \u{e0a0} {stdout} ",
-                git_branch_style:   ("orange", "",        "",     "thin",  "dim",    ""),
+                git_branch_style:   ("orange", "",        ""),
                 memory_format:      " \u{f035b} {stdout} ",
-                memory_style:       ("accent", "dim",     "",     "thick", "dim",    "accent"),
+                memory_style:       ("accent", "dim",     ""),
                 date_format:        " \u{f00ed} {stdout} ",
-                date_style:         ("bg",     "accent",  "",     "",      "",       ""),
+                date_style:         ("bg",     "accent",  ""),
                 time_format:        " \u{f0954} {stdout} ",
-                time_style:         ("bg",     "accent",  "",     "",      "",       ""),
+                time_style:         ("bg",     "accent",  ""),
             },
-            // "minimal" (default): flat look, pipe separators between widgets
+            // "minimal" (default): flat look
             _ => Self {
                 format_left: "{mode}{session}{tabs}",
                 format_right: "{cwd}{git_branch}{memory}{time}",
-                separator: SeparatorPreset::Pipe,
                 bar_bg: "bg",
                 mode_format:        " {content} ",
-                mode_style:         ("accent", "",  "bold", "thin", "dim", ""),
+                mode_style:         ("accent", "",  "bold"),
                 session_format:     " 󰆍 {name} ",
-                session_style:      ("cyan",   "",  "",     "thin", "dim", ""),
-                tab_format:         "{name}",
-                tab_active_style:   ("fg",     "",  "bold", "",     "",    ""),
-                tab_inactive_style: ("dim",    "",  "",     "",     "",    ""),
-                tab_divider: " ",
+                session_style:      ("cyan",   "",  ""),
+                tab_active_format:  "{name}",
+                tab_inactive_format: "{name}",
+                tab_active_style:   ("fg",     "",  "bold"),
+                tab_inactive_style: ("dim",    "",  ""),
                 cwd_format:         " \u{f0256} {cwd} ",
-                cwd_style:          ("cyan",   "",  "",     "thin", "dim", ""),
+                cwd_style:          ("cyan",   "",  ""),
                 git_branch_format:  " \u{e0a0} {stdout} ",
-                git_branch_style:   ("orange", "",  "",     "thin", "dim", ""),
+                git_branch_style:   ("orange", "",  ""),
                 memory_format:      " \u{f035b} {stdout} ",
-                memory_style:       ("green",  "",  "",     "thin", "dim", ""),
+                memory_style:       ("green",  "",  ""),
                 date_format:        " \u{f00ed} {stdout} ",
-                date_style:         ("magenta","",  "",     "thin", "dim", ""),
+                date_style:         ("magenta","",  ""),
                 time_format:        " \u{f0954} {stdout} ",
-                time_style:         ("blue",   "",  "",     "",     "",    ""),
+                time_style:         ("blue",   "",  ""),
             },
         }
     }
@@ -438,6 +359,8 @@ pub(crate) struct TextWidget {
     pub(crate) content: String,
     /// Widget style.
     pub(crate) style: WidgetStyle,
+    /// Format template. Placeholder: {content}. Default: "{content}".
+    pub(crate) format: String,
 }
 
 pub(crate) struct HudConfig {
@@ -469,8 +392,6 @@ pub(crate) struct HudConfig {
     pub(crate) tooltip_border: bool,
     pub(crate) enable_status_bar: bool,
     pub(crate) enable_tooltip: bool,
-    /// Named separator preset (triangle, circle, pipe, slash, backslash).
-    pub(crate) separator: SeparatorPreset,
     /// Whether to use zellij's theme colors (theme "system").
     pub(crate) use_system_theme: bool,
     /// Per-mode accent color (palette name or hex). Widgets using "accent"
@@ -495,16 +416,14 @@ pub(crate) struct HudConfig {
     pub(crate) tab_active_style: WidgetStyle,
     /// Inactive tab style.
     pub(crate) tab_inactive_style: WidgetStyle,
-    /// Tab format template. Placeholders: {name}, {index}, {sync_indicator}, {fullscreen_indicator}.
-    pub(crate) tab_format: String,
-    /// Separator between individual tabs.
-    pub(crate) tab_divider: String,
+    /// Active tab format template. Placeholders: {name}, {index}, {sync_indicator}, {fullscreen_indicator}.
+    pub(crate) tab_active_format: String,
+    /// Inactive tab format template. Same placeholders as active.
+    pub(crate) tab_inactive_format: String,
     /// Sync indicator text (shown conditionally).
     pub(crate) tab_sync_indicator: String,
     /// Fullscreen indicator text (shown conditionally).
     pub(crate) tab_fullscreen_indicator: String,
-    /// Separator after the tabs widget.
-    pub(crate) tabs_separator: String,
 
     /// CWD widget style.
     pub(crate) cwd_style: WidgetStyle,
@@ -554,7 +473,7 @@ impl HudConfig {
     }
 
     fn build_from_palette(palette: &ThemePalette, config: &BTreeMap<String, String>) -> Self {
-        let ws = |s: WStyle| WidgetStyle::new(s.0, s.1, s.2, s.3, s.4, s.5);
+        let ws = |s: WStyle| WidgetStyle::new(s.0, s.1, s.2);
         let style_name = config.get("style").map(|s| s.as_str()).unwrap_or("minimal");
         let sd = StyleDefaults::from_name(style_name);
         let icon_colors = IconColors::from_palette(palette);
@@ -593,7 +512,6 @@ impl HudConfig {
             tooltip_border: true,
             enable_status_bar: true,
             enable_tooltip: true,
-            separator: sd.separator,
             use_system_theme: false,
             mode_accent,
 
@@ -620,11 +538,10 @@ impl HudConfig {
             session_format: sd.session_format.to_string(),
             tab_active_style: ws(sd.tab_active_style),
             tab_inactive_style: ws(sd.tab_inactive_style),
-            tab_format: sd.tab_format.to_string(),
-            tab_divider: sd.tab_divider.to_string(),
+            tab_active_format: sd.tab_active_format.to_string(),
+            tab_inactive_format: sd.tab_inactive_format.to_string(),
             tab_sync_indicator: "🔗".to_string(),
             tab_fullscreen_indicator: "⛶".to_string(),
-            tabs_separator: String::new(),
             cwd_style: ws(sd.cwd_style),
             cwd_format: sd.cwd_format.to_string(),
             command_widgets: HashMap::new(),
@@ -686,25 +603,27 @@ impl HudConfig {
         Self::parse_widget_style(config, "tab_active", &mut hud.tab_active_style);
         Self::parse_widget_style(config, "tab_inactive", &mut hud.tab_inactive_style);
 
-        // v3 per-mode content overrides
+        // v3 per-mode content overrides (new: mode_content_*, fallback: mode_*)
         let mode_content_map = [
-            ("mode_normal", InputMode::Normal),
-            ("mode_locked", InputMode::Locked),
-            ("mode_pane", InputMode::Pane),
-            ("mode_tab", InputMode::Tab),
-            ("mode_resize", InputMode::Resize),
-            ("mode_move", InputMode::Move),
-            ("mode_scroll", InputMode::Scroll),
-            ("mode_search", InputMode::Search),
-            ("mode_enter_search", InputMode::EnterSearch),
-            ("mode_rename_tab", InputMode::RenameTab),
-            ("mode_rename_pane", InputMode::RenamePane),
-            ("mode_session", InputMode::Session),
-            ("mode_prompt", InputMode::Prompt),
-            ("mode_tmux", InputMode::Tmux),
+            ("mode_content_normal", "mode_normal", InputMode::Normal),
+            ("mode_content_locked", "mode_locked", InputMode::Locked),
+            ("mode_content_pane", "mode_pane", InputMode::Pane),
+            ("mode_content_tab", "mode_tab", InputMode::Tab),
+            ("mode_content_resize", "mode_resize", InputMode::Resize),
+            ("mode_content_move", "mode_move", InputMode::Move),
+            ("mode_content_scroll", "mode_scroll", InputMode::Scroll),
+            ("mode_content_search", "mode_search", InputMode::Search),
+            ("mode_content_enter_search", "mode_enter_search", InputMode::EnterSearch),
+            ("mode_content_rename_tab", "mode_rename_tab", InputMode::RenameTab),
+            ("mode_content_rename_pane", "mode_rename_pane", InputMode::RenamePane),
+            ("mode_content_session", "mode_session", InputMode::Session),
+            ("mode_content_prompt", "mode_prompt", InputMode::Prompt),
+            ("mode_content_tmux", "mode_tmux", InputMode::Tmux),
         ];
-        for (key, mode) in &mode_content_map {
-            if let Some(v) = config.get(*key) {
+        for (new_key, old_key, mode) in &mode_content_map {
+            if let Some(v) = config.get(*new_key) {
+                hud.mode_content.insert(*mode, v.clone());
+            } else if let Some(v) = config.get(*old_key) {
                 hud.mode_content.insert(*mode, v.clone());
             }
         }
@@ -719,11 +638,16 @@ impl HudConfig {
         if let Some(v) = config.get("session_format") {
             hud.session_format = v.clone();
         }
+        // tab_format sets both active and inactive as fallback
         if let Some(v) = config.get("tab_format") {
-            hud.tab_format = v.clone();
+            hud.tab_active_format = v.clone();
+            hud.tab_inactive_format = v.clone();
         }
-        if let Some(v) = config.get("tab_divider") {
-            hud.tab_divider = v.clone();
+        if let Some(v) = config.get("tab_active_format") {
+            hud.tab_active_format = v.clone();
+        }
+        if let Some(v) = config.get("tab_inactive_format") {
+            hud.tab_inactive_format = v.clone();
         }
         if let Some(v) = config.get("tab_sync_indicator") {
             hud.tab_sync_indicator = v.clone();
@@ -731,16 +655,13 @@ impl HudConfig {
         if let Some(v) = config.get("tab_fullscreen_indicator") {
             hud.tab_fullscreen_indicator = v.clone();
         }
-        if let Some(v) = config.get("tabs_separator") {
-            hud.tabs_separator = v.clone();
-        }
-
         // v3 built-in widget style overrides
         Self::parse_widget_style(config, "cwd", &mut hud.cwd_style);
 
-        // Discover and parse command_NAME_* and text_NAME_* widgets
-        hud.command_widgets = Self::parse_command_widgets(config);
-        hud.text_widgets = Self::parse_text_widgets(config);
+        // Discover and parse user-defined widgets
+        let (user_commands, user_texts) = Self::parse_user_widgets(config);
+        hud.command_widgets = user_commands;
+        hud.text_widgets = user_texts;
 
         // Default command widgets (can be overridden by user config).
         // Short names work as format placeholders: {time}, {memory}, {git_branch}.
@@ -787,9 +708,6 @@ impl HudConfig {
         if let Some(v) = config.get("format_right") {
             hud.format_right = v.clone();
         }
-        if let Some(v) = config.get("separator") {
-            hud.separator = SeparatorPreset::from_str(v);
-        }
         if let Some(v) = config.get("enable_status_bar") {
             hud.enable_status_bar = v != "false";
         }
@@ -800,73 +718,119 @@ impl HudConfig {
         hud
     }
 
-    /// Discover command widgets from config keys matching `command_NAME_command`.
-    fn parse_command_widgets(config: &BTreeMap<String, String>) -> HashMap<String, CommandWidget> {
-        let mut widgets = HashMap::new();
-        let suffix = "_command";
+    /// Reserved config prefixes that cannot be used as user widget names.
+    /// Checked by exact match: "mode" is reserved, but "mode_sep" is allowed.
+    const RESERVED_PREFIXES: &'static [&'static str] = &[
+        "mode", "session", "tab_active", "tab_inactive", "tabs", "cwd", "bar",
+        "tooltip", "palette", "format", "enable", "theme", "style", "base_mode",
+        "mode_accent", "mode_content",
+    ];
 
-        for key in config.keys() {
-            if let Some(rest) = key.strip_prefix("command_") {
-                if let Some(name) = rest.strip_suffix(suffix) {
-                    if name.is_empty() {
-                        continue;
-                    }
-                    let prefix = format!("command_{}", name);
-                    let command = config.get(key).cloned().unwrap_or_default();
-                    let mut style = WidgetStyle::default();
-                    Self::parse_widget_style(config, &prefix, &mut style);
-                    let format = config
-                        .get(&format!("{}_format", prefix))
-                        .cloned()
-                        .unwrap_or_else(|| "{stdout}".to_string());
-                    let interval = config
-                        .get(&format!("{}_interval", prefix))
-                        .and_then(|v| v.parse().ok())
-                        .unwrap_or(10);
-
-                    widgets.insert(
-                        name.to_string(),
-                        CommandWidget {
-                            command,
-                            style,
-                            format,
-                            interval,
-                        },
-                    );
-                }
-            }
-        }
-        widgets
+    /// Check if a widget name conflicts with a reserved prefix.
+    fn is_reserved_name(name: &str) -> bool {
+        Self::RESERVED_PREFIXES.contains(&name)
     }
 
-    /// Discover text widgets from config keys matching `text_NAME_content`.
-    fn parse_text_widgets(config: &BTreeMap<String, String>) -> HashMap<String, TextWidget> {
-        let mut widgets = HashMap::new();
-        let suffix = "_content";
+    /// Discover user-defined widgets from config keys.
+    ///
+    /// Detection rules:
+    /// - `NAME_command` → command widget (also accepts `command_NAME_command` for compat)
+    /// - `NAME_content` → text widget (also accepts `text_NAME_content` for compat)
+    ///
+    /// Widget names must not match any reserved prefix.
+    fn parse_user_widgets(
+        config: &BTreeMap<String, String>,
+    ) -> (HashMap<String, CommandWidget>, HashMap<String, TextWidget>) {
+        let mut commands = HashMap::new();
+        let mut texts = HashMap::new();
 
         for key in config.keys() {
-            if let Some(rest) = key.strip_prefix("text_") {
-                if let Some(name) = rest.strip_suffix(suffix) {
-                    if name.is_empty() {
-                        continue;
-                    }
-                    let prefix = format!("text_{}", name);
-                    let content = config.get(key).cloned().unwrap_or_default();
-                    let mut style = WidgetStyle::default();
-                    Self::parse_widget_style(config, &prefix, &mut style);
-
-                    widgets.insert(
-                        name.to_string(),
-                        TextWidget { content, style },
-                    );
+            // Try NAME_command pattern
+            if let Some(name) = key.strip_suffix("_command") {
+                if name.is_empty() {
+                    continue;
                 }
+                // Handle command_NAME_command compat: extract inner name
+                let widget_name = name.strip_prefix("command_").unwrap_or(name);
+                if widget_name.is_empty() || Self::is_reserved_name(widget_name) {
+                    continue;
+                }
+                if commands.contains_key(widget_name) {
+                    continue;
+                }
+                let command = config.get(key).cloned().unwrap_or_default();
+                let mut style = WidgetStyle::default();
+                // Try new-style keys (NAME_fg) first, then old-style (command_NAME_fg)
+                Self::parse_widget_style(config, widget_name, &mut style);
+                if widget_name != name {
+                    // Also check old-style prefixed keys as fallback
+                    let mut old_style = WidgetStyle::default();
+                    Self::parse_widget_style(config, name, &mut old_style);
+                    if style.fg.is_empty() { style.fg = old_style.fg; }
+                    if style.bg.is_empty() { style.bg = old_style.bg; }
+                    if style.attr.is_empty() { style.attr = old_style.attr; }
+                }
+                let format = config
+                    .get(&format!("{}_format", widget_name))
+                    .or_else(|| config.get(&format!("{}_format", name)))
+                    .cloned()
+                    .unwrap_or_else(|| "{stdout}".to_string());
+                let interval = config
+                    .get(&format!("{}_interval", widget_name))
+                    .or_else(|| config.get(&format!("{}_interval", name)))
+                    .and_then(|v| v.parse().ok())
+                    .unwrap_or(10);
+
+                commands.insert(
+                    widget_name.to_string(),
+                    CommandWidget { command, style, format, interval },
+                );
+            }
+
+            // Try NAME_content pattern (skip if it matches mode_content_* which is per-mode content)
+            if let Some(name) = key.strip_suffix("_content") {
+                if name.is_empty() {
+                    continue;
+                }
+                // Skip mode_content_MODE keys (handled separately for mode widget)
+                if name.starts_with("mode_content") {
+                    continue;
+                }
+                // Handle text_NAME_content compat: extract inner name
+                let widget_name = name.strip_prefix("text_").unwrap_or(name);
+                if widget_name.is_empty() || Self::is_reserved_name(widget_name) {
+                    continue;
+                }
+                if texts.contains_key(widget_name) {
+                    continue;
+                }
+                let content = config.get(key).cloned().unwrap_or_default();
+                let mut style = WidgetStyle::default();
+                Self::parse_widget_style(config, widget_name, &mut style);
+                if widget_name != name {
+                    let mut old_style = WidgetStyle::default();
+                    Self::parse_widget_style(config, name, &mut old_style);
+                    if style.fg.is_empty() { style.fg = old_style.fg; }
+                    if style.bg.is_empty() { style.bg = old_style.bg; }
+                    if style.attr.is_empty() { style.attr = old_style.attr; }
+                }
+                let format = config
+                    .get(&format!("{}_format", widget_name))
+                    .or_else(|| config.get(&format!("{}_format", name)))
+                    .cloned()
+                    .unwrap_or_else(|| "{content}".to_string());
+
+                texts.insert(
+                    widget_name.to_string(),
+                    TextWidget { content, style, format },
+                );
             }
         }
-        widgets
+
+        (commands, texts)
     }
 
-    /// Parse `{prefix}_fg`, `{prefix}_bg`, `{prefix}_attr`, `{prefix}_separator`,
-    /// `{prefix}_separator_fg`, `{prefix}_separator_bg` from config into a WidgetStyle.
+    /// Parse `{prefix}_fg`, `{prefix}_bg`, `{prefix}_attr` from config into a WidgetStyle.
     fn parse_widget_style(
         config: &BTreeMap<String, String>,
         prefix: &str,
@@ -880,15 +844,6 @@ impl HudConfig {
         }
         if let Some(v) = config.get(&format!("{}_attr", prefix)) {
             style.attr = v.clone();
-        }
-        if let Some(v) = config.get(&format!("{}_separator", prefix)) {
-            style.separator = v.clone();
-        }
-        if let Some(v) = config.get(&format!("{}_separator_fg", prefix)) {
-            style.separator_fg = v.clone();
-        }
-        if let Some(v) = config.get(&format!("{}_separator_bg", prefix)) {
-            style.separator_bg = v.clone();
         }
     }
 

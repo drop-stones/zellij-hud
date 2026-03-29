@@ -589,8 +589,8 @@ impl ZellijPlugin for State {
                 let c = &self.hud_config;
                 let bg = c.resolve_color_with_accent(&c.bar_bg, &c.palette, self.mode).bg();
                 let reset = "\x1b[0m";
-                let left = self.render_format(&self.hud_config.format_left.clone(), false);
-                let right = self.render_format(&self.hud_config.format_right.clone(), true);
+                let left = self.render_format(&self.hud_config.format_left.clone());
+                let right = self.render_format(&self.hud_config.format_right.clone());
 
                 let left_visible = visible_len(&left);
                 let right_visible = visible_len(&right);
