@@ -97,21 +97,28 @@ impl StyleDefaults {
     fn from_name(name: &str) -> Self {
         match name {
             //                          (fg,       bg,        attr)
+            //
+            // Powerline: per-segment bg with arrow separators.
+            // Separator text widgets (s_ms, s_sb, etc.) are defined as
+            // default text widgets in build_from_palette().
+            //
+            // Left:  [mode bg=accent]▶[session bg=dim]▶[tabs]
+            // Right: [cwd]▸[git]◂[memory bg=dim]◂[time bg=accent]
             "powerline" => Self {
-                format_left: "{mode}{session}{tabs}",
-                format_right: "{cwd}{git_branch}{memory}{time}",
+                format_left: "{mode}{s_ms}{session}{s_sb}{tabs}",
+                format_right: "{cwd}{git_branch}{s_gm}{memory}{s_mt}{time}",
                 bar_bg: "bg",
                 mode_format:        " {content} ",
                 mode_style:         ("bg",     "accent",  "bold"),
                 session_format:     " 󰆍 {name} ",
                 session_style:      ("accent", "dim",     ""),
-                tab_active_format:  " {name} ",
-                tab_inactive_format: " {name} ",
+                tab_active_format:  "{ta_in} {name} {ta_out}",
+                tab_inactive_format: "{ti_in} {name} {ti_out}",
                 tab_active_style:   ("fg",     "#484848", "bold"),
                 tab_inactive_style: ("dim",    "#282828", ""),
                 cwd_format:         " \u{f0256} {cwd} ",
                 cwd_style:          ("cyan",   "",        ""),
-                git_branch_format:  " \u{e0a0} {stdout} ",
+                git_branch_format:  "{s_cg} \u{e0a0} {stdout} ",
                 git_branch_style:   ("orange", "",        ""),
                 memory_format:      " \u{f035b} {stdout} ",
                 memory_style:       ("accent", "dim",     ""),
@@ -120,22 +127,25 @@ impl StyleDefaults {
                 time_format:        " \u{f0954} {stdout} ",
                 time_style:         ("bg",     "accent",  ""),
             },
-            // "minimal" (default): flat look
+            // "minimal" (default): flat look with thin separators.
+            // A single "sep" text widget is defined in build_from_palette().
+            // git_branch includes a leading {sep} so the separator hides
+            // when the widget is empty (not in a git repo).
             _ => Self {
-                format_left: "{mode}{session}{tabs}",
-                format_right: "{cwd}{git_branch}{memory}{time}",
+                format_left: "{mode}{sep}{session}{sep}{tabs}",
+                format_right: "{cwd}{git_branch}{sep}{memory}{sep}{time}",
                 bar_bg: "bg",
                 mode_format:        " {content} ",
                 mode_style:         ("accent", "",  "bold"),
                 session_format:     " 󰆍 {name} ",
                 session_style:      ("cyan",   "",  ""),
-                tab_active_format:  "{name}",
-                tab_inactive_format: "{name}",
+                tab_active_format:  " {name}",
+                tab_inactive_format: " {name}",
                 tab_active_style:   ("fg",     "",  "bold"),
                 tab_inactive_style: ("dim",    "",  ""),
                 cwd_format:         " \u{f0256} {cwd} ",
                 cwd_style:          ("cyan",   "",  ""),
-                git_branch_format:  " \u{e0a0} {stdout} ",
+                git_branch_format:  "{sep} \u{e0a0} {stdout} ",
                 git_branch_style:   ("orange", "",  ""),
                 memory_format:      " \u{f035b} {stdout} ",
                 memory_style:       ("green",  "",  ""),
@@ -702,6 +712,42 @@ impl HudConfig {
             hud.command_widgets.get_mut(name).unwrap().style = style;
         }
 
+        // Default text widgets (separators) based on style preset.
+        let tw = |content: &str, fg: &str, bg: &str| TextWidget {
+            content: content.to_string(),
+            style: WidgetStyle::new(fg, bg, ""),
+            format: "{content}".to_string(),
+        };
+        let default_texts: Vec<(&str, TextWidget)> = match style_name {
+            "powerline" => vec![
+                // Left: mode(bg=accent) ▶ session(bg=dim) ▶ bar_bg
+                ("s_ms", tw("\u{e0b0}", "accent", "dim")),     // mode → session
+                ("s_sb", tw("\u{e0b0}", "dim",    "")),         // session → bar
+                // Right: cwd ▸ git ◂ memory(bg=dim) ◂ time(bg=accent)
+                ("s_cg", tw("\u{e0b3}", "dim",    "")),         // cwd → git (thin)
+                ("s_gm", tw("\u{e0b2}", "dim",    "")),         // git → memory
+                ("s_mt", tw("\u{e0b2}", "accent", "dim")),      // memory → time
+                // Tab powerline separators (entry/exit arrows)
+                ("ta_in",  tw("\u{e0b0}", "bg",             "tab_active_bg")),
+                ("ta_out", tw("\u{e0b0}", "tab_active_bg",  "bg")),
+                ("ti_in",  tw("\u{e0b0}", "bg",             "tab_inactive_bg")),
+                ("ti_out", tw("\u{e0b0}", "tab_inactive_bg","bg")),
+            ],
+            _ => vec![
+                ("sep", tw("|", "dim", "")),
+            ],
+        };
+        for (name, widget) in default_texts {
+            hud.text_widgets.entry(name.to_string()).or_insert(widget);
+        }
+        // Apply style overrides to default text widgets
+        let text_names: Vec<String> = hud.text_widgets.keys().cloned().collect();
+        for name in &text_names {
+            let mut style = hud.text_widgets[name].style.clone();
+            Self::parse_widget_style(config, &name, &mut style);
+            hud.text_widgets.get_mut(name.as_str()).unwrap().style = style;
+        }
+
         if let Some(v) = config.get("format_left") {
             hud.format_left = v.clone();
         }
@@ -853,8 +899,8 @@ impl HudConfig {
         Color::from_hex(hex)
     }
 
-    /// Resolve a color value that may be "accent", a palette name, or hex.
-    /// "accent" is resolved to the current mode's accent color via the palette.
+    /// Resolve a color value that may be "accent", "tab_active_bg",
+    /// "tab_inactive_bg", a palette name, or hex.
     pub(crate) fn resolve_color_with_accent(
         &self,
         value: &str,
@@ -869,6 +915,18 @@ impl HudConfig {
                 .unwrap_or("blue");
             let hex = palette.resolve(accent_name).unwrap_or(accent_name);
             Color::from_hex(hex).unwrap_or_default()
+        } else if value == "tab_active_bg" {
+            if self.tab_active_style.bg.is_empty() {
+                self.resolve_color_with_accent(&self.bar_bg, palette, mode)
+            } else {
+                self.resolve_color_with_accent(&self.tab_active_style.bg, palette, mode)
+            }
+        } else if value == "tab_inactive_bg" {
+            if self.tab_inactive_style.bg.is_empty() {
+                self.resolve_color_with_accent(&self.bar_bg, palette, mode)
+            } else {
+                self.resolve_color_with_accent(&self.tab_inactive_style.bg, palette, mode)
+            }
         } else {
             Self::resolve_color(value, palette).unwrap_or_default()
         }

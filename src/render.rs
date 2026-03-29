@@ -63,8 +63,9 @@ fn extract_placeholders(format_str: &str) -> Vec<String> {
 }
 
 /// Resolve widget references in a string: replace {NAME} tokens with rendered widgets.
-/// Leaves unrecognized tokens as-is.
-fn resolve_widget_refs(state: &State, text: &str, depth: u8) -> String {
+/// After each child widget (which ends with a reset), re-apply `style_restore` so that
+/// subsequent literal text in the format inherits the parent widget's styling.
+fn resolve_widget_refs(state: &State, text: &str, depth: u8, style_restore: &str) -> String {
     if depth >= MAX_WIDGET_DEPTH {
         return text.to_string();
     }
@@ -73,7 +74,8 @@ fn resolve_widget_refs(state: &State, text: &str, depth: u8) -> String {
     for ph in &placeholders {
         let rendered = state.render_segment_with_depth(ph, depth + 1);
         if !rendered.is_empty() {
-            result = result.replacen(ph, &rendered, 1);
+            let with_restore = format!("{rendered}{style_restore}");
+            result = result.replacen(ph, &with_restore, 1);
         }
     }
     result
@@ -114,28 +116,31 @@ impl State {
         match placeholder {
             "{mode}" => {
                 let (fg, bg, attr) = self.style_escapes(&c.mode_style);
+                let restore = format!("{bg}{fg}{attr}");
                 let mode_text = c.mode_content
                     .get(&self.mode)
                     .cloned()
                     .unwrap_or_else(|| format!("{:?}", self.mode).to_uppercase());
                 let content = c.mode_format.replace("{content}", &mode_text);
-                let content = resolve_widget_refs(self, &content, depth);
-                format!("{bg}{fg}{attr}{content}{reset}")
+                let content = resolve_widget_refs(self, &content, depth, &restore);
+                format!("{restore}{content}{reset}")
             }
             "{session}" => {
                 let (fg, bg, attr) = self.style_escapes(&c.session_style);
+                let restore = format!("{bg}{fg}{attr}");
                 let content = c.session_format.replace("{name}", &self.session_name);
-                let content = resolve_widget_refs(self, &content, depth);
-                format!("{bg}{fg}{attr}{content}{reset}")
+                let content = resolve_widget_refs(self, &content, depth, &restore);
+                format!("{restore}{content}{reset}")
             }
             "{tabs}" => {
                 self.render_tabs_with_depth(depth)
             }
             "{cwd}" => {
                 let (fg, bg, attr) = self.style_escapes(&c.cwd_style);
+                let restore = format!("{bg}{fg}{attr}");
                 let content = c.cwd_format.replace("{cwd}", &self.format_cwd());
-                let content = resolve_widget_refs(self, &content, depth);
-                format!("{bg}{fg}{attr}{content}{reset}")
+                let content = resolve_widget_refs(self, &content, depth, &restore);
+                format!("{restore}{content}{reset}")
             }
             _ => {
                 let name = placeholder.strip_prefix('{').and_then(|s| s.strip_suffix('}'));
@@ -191,8 +196,9 @@ impl State {
             }
 
             // Resolve widget references in tab format
-            let content = resolve_widget_refs(self, &content, depth);
-            out.push_str(&format!("{bg}{fg}{attr}{content}{reset}"));
+            let restore = format!("{bg}{fg}{attr}");
+            let content = resolve_widget_refs(self, &content, depth, &restore);
+            out.push_str(&format!("{restore}{content}{reset}"));
         }
 
         out
@@ -221,12 +227,12 @@ impl State {
             .replace("{stdout}", stdout)
             .replace("{exit_code}", &exit_code.to_string());
 
-        // Resolve widget references in command format
-        let content = resolve_widget_refs(self, &content, depth);
-
         let reset = "\x1b[0m";
         let (fg, bg, attr) = self.style_escapes(&widget.style);
-        format!("{bg}{fg}{attr}{content}{reset}")
+        let restore = format!("{bg}{fg}{attr}");
+        // Resolve widget references in command format
+        let content = resolve_widget_refs(self, &content, depth, &restore);
+        format!("{restore}{content}{reset}")
     }
 
     /// Render a user-defined text widget.
@@ -237,11 +243,12 @@ impl State {
         };
         let reset = "\x1b[0m";
         let (fg, bg, attr) = self.style_escapes(&widget.style);
+        let restore = format!("{bg}{fg}{attr}");
         let content = widget.format.replace("{content}", &widget.content);
 
         // Resolve widget references in text format
-        let content = resolve_widget_refs(self, &content, depth);
-        format!("{bg}{fg}{attr}{content}{reset}")
+        let content = resolve_widget_refs(self, &content, depth, &restore);
+        format!("{restore}{content}{reset}")
     }
 
     /// Unified format renderer. Extracts {placeholder} tokens, renders each segment,
