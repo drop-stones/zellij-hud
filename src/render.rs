@@ -79,32 +79,25 @@ impl State {
         match placeholder {
             "{mode}" => {
                 let (fg, bg, attr) = self.style_escapes(&c.mode_style);
-                let content = c.mode_content
+                let mode_text = c.mode_content
                     .get(&self.mode)
                     .cloned()
                     .unwrap_or_else(|| format!("{:?}", self.mode).to_uppercase());
-                format!("{bg}{fg}{attr} {content} {reset}")
+                let content = c.mode_format.replace("{content}", &mode_text);
+                format!("{bg}{fg}{attr}{content}{reset}")
             }
             "{session}" => {
                 let (fg, bg, attr) = self.style_escapes(&c.session_style);
                 let content = c.session_format.replace("{name}", &self.session_name);
-                if bg.is_empty() {
-                    format!("{fg}{attr}{content}{reset}")
-                } else {
-                    format!("{bg}{fg}{attr} {content} {reset}")
-                }
+                format!("{bg}{fg}{attr}{content}{reset}")
             }
             "{tabs}" => {
                 self.render_tabs()
             }
             "{cwd}" => {
                 let (fg, bg, attr) = self.style_escapes(&c.cwd_style);
-                let content = format!("\u{f0256} {}", self.format_cwd());
-                if bg.is_empty() {
-                    format!("{fg}{attr}{content}{reset}")
-                } else {
-                    format!("{bg}{fg}{attr} {content} {reset}")
-                }
+                let content = c.cwd_format.replace("{cwd}", &self.format_cwd());
+                format!("{bg}{fg}{attr}{content}{reset}")
             }
             _ => {
                 // Aliases: {time} → {command_time}, {date} → {command_date}, etc.
@@ -196,21 +189,13 @@ impl State {
                     ));
                 }
 
-                if bg.is_empty() {
-                    out.push_str(&format!("{fg}{attr} {content} {reset}"));
-                } else {
-                    out.push_str(&format!("{bg}{fg}{attr} {content} {reset}"));
-                }
+                out.push_str(&format!("{bg}{fg}{attr}{content}{reset}"));
             } else {
                 // Flat tabs: simple divider between tabs
                 if i > 0 {
                     out.push_str(&c.tab_divider);
                 }
-                if bg.is_empty() {
-                    out.push_str(&format!("{fg}{attr}{content}{reset}"));
-                } else {
-                    out.push_str(&format!("{bg}{fg}{attr} {content} {reset}"));
-                }
+                out.push_str(&format!("{bg}{fg}{attr}{content}{reset}"));
             }
         }
 
@@ -257,11 +242,7 @@ impl State {
 
         let reset = "\x1b[0m";
         let (fg, bg, attr) = self.style_escapes(&widget.style);
-        if bg.is_empty() {
-            format!("{fg}{attr}{content}{reset}")
-        } else {
-            format!("{bg}{fg}{attr} {content} {reset}")
-        }
+        format!("{bg}{fg}{attr}{content}{reset}")
     }
 
     /// Render a user-defined text widget.
@@ -272,11 +253,7 @@ impl State {
         };
         let reset = "\x1b[0m";
         let (fg, bg, attr) = self.style_escapes(&widget.style);
-        if bg.is_empty() {
-            format!("{fg}{attr}{}{reset}", widget.content)
-        } else {
-            format!("{bg}{fg}{attr} {} {reset}", widget.content)
-        }
+        format!("{bg}{fg}{attr}{}{reset}", widget.content)
     }
 
     /// Get the WidgetStyle for a given placeholder (for separator rendering).
@@ -350,14 +327,6 @@ impl State {
         for (idx, seg) in segments.iter().enumerate() {
             let style = self.widget_style_for(&seg.placeholder);
 
-            // Tabs need padding only when they have no bg.
-            // Tabs with bg handle their own leading/trailing separators internally.
-            let needs_padding = if seg.placeholder == "{tabs}" {
-                c.tab_active_style.bg.is_empty() && c.tab_inactive_style.bg.is_empty()
-            } else {
-                style.map_or(false, |s| s.bg.is_empty())
-            };
-
             if is_right {
                 // Right side: separator BEFORE the segment
                 if idx > 0 {
@@ -379,14 +348,10 @@ impl State {
                         }
                     }
                 }
-                if needs_padding { out.push(' '); }
                 out.push_str(&seg.content);
-                if needs_padding { out.push(' '); }
             } else {
                 // Left side: segment first, then separator
-                if needs_padding { out.push(' '); }
                 out.push_str(&seg.content);
-                if needs_padding { out.push(' '); }
 
                 if let Some(st) = style {
                     if !st.separator.is_empty() {

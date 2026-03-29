@@ -308,6 +308,16 @@ System theme: `bg` = `ribbon_unselected.base` (maps to `palette.black` in zellij
 
 ## TODO
 
+### Eliminate implicit behavior in rendering
+
+All rendering behavior must be driven by explicit user config. No implicit mode switching.
+
+- [ ] **Widget padding**: Currently `bg.is_empty()` implicitly toggles between `content` (no bg) and ` content ` (with bg). Add explicit padding config per widget, or let content templates include their own spaces.
+- [ ] **`{mode}` always padded**: `{mode}` hardcodes ` content ` regardless of bg. Should follow the same rule as other widgets.
+- [ ] **`{tabs}` special-case padding in `render_format`**: Checks `seg.placeholder == "{tabs}"` to decide padding. Should be uniform with other widgets.
+- [ ] **`tabs_have_bg` two-path rendering**: `render_tabs()` switches between triangle-gap and flat-divider based on `tab_active_style.bg.is_empty()`. This is the old `is_powerline()` renamed. Add `tab_divider_fg`, `tab_divider_bg` config keys so tab separators are fully explicit.
+- [ ] **Triangle gap dynamic colors**: The double-triangle gap (`prev▶bar▶cur`) computes fg from adjacent tabs' bg. Needs design decision on how to make this explicit.
+
 ### Status bar customization
 
 - [ ] Predefined theme configs (provide good defaults for powerline and minimal styles)

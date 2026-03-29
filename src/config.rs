@@ -150,14 +150,23 @@ struct StyleDefaults {
     format_right: &'static str,
     separator: SeparatorPreset,
     bar_bg: &'static str,
+    mode_format: &'static str,
     mode_style: WStyle,
+    session_format: &'static str,
     session_style: WStyle,
+    tab_format: &'static str,
     tab_active_style: WStyle,
     tab_inactive_style: WStyle,
+    tab_divider: &'static str,
+    cwd_format: &'static str,
     cwd_style: WStyle,
+    date_format: &'static str,
     date_style: WStyle,
+    time_format: &'static str,
     time_style: WStyle,
+    memory_format: &'static str,
     memory_style: WStyle,
+    git_branch_format: &'static str,
     git_branch_style: WStyle,
 }
 
@@ -165,20 +174,28 @@ impl StyleDefaults {
     fn from_name(name: &str) -> Self {
         match name {
             //                          (fg,       bg,        attr,   sep,     sep_fg,  sep_bg)
-            //                          (fg,       bg,        attr,   sep,     sep_fg,  sep_bg)
             "powerline" => Self {
                 format_left: "{mode}{session}{tabs}",
                 format_right: "{cwd}{git_branch}{memory}{time}",
                 separator: SeparatorPreset::Triangle,
                 bar_bg: "bg",
+                mode_format:        " {content} ",
                 mode_style:         ("bg",     "accent",  "bold", "thick", "accent", "dim"),
+                session_format:     " 󰆍 {name} ",
                 session_style:      ("accent", "dim",     "",     "thick", "dim",    "bg"),
+                tab_format:         " {name} ",
                 tab_active_style:   ("fg",     "#484848", "bold", "",      "",       ""),
                 tab_inactive_style: ("dim",    "#282828", "",     "",      "",       ""),
+                tab_divider: " ",
+                cwd_format:         " \u{f0256} {cwd} ",
                 cwd_style:          ("cyan",   "",        "",     "thin",  "dim",    ""),
+                git_branch_format:  " \u{e0a0} {stdout} ",
                 git_branch_style:   ("orange", "",        "",     "thin",  "dim",    ""),
+                memory_format:      " \u{f035b} {stdout} ",
                 memory_style:       ("accent", "dim",     "",     "thick", "dim",    "accent"),
+                date_format:        " \u{f00ed} {stdout} ",
                 date_style:         ("bg",     "accent",  "",     "",      "",       ""),
+                time_format:        " \u{f0954} {stdout} ",
                 time_style:         ("bg",     "accent",  "",     "",      "",       ""),
             },
             // "minimal" (default): flat look, pipe separators between widgets
@@ -187,14 +204,23 @@ impl StyleDefaults {
                 format_right: "{cwd}{git_branch}{memory}{time}",
                 separator: SeparatorPreset::Pipe,
                 bar_bg: "bg",
+                mode_format:        " {content} ",
                 mode_style:         ("accent", "",  "bold", "thin", "dim", ""),
+                session_format:     " 󰆍 {name} ",
                 session_style:      ("cyan",   "",  "",     "thin", "dim", ""),
+                tab_format:         "{name}",
                 tab_active_style:   ("fg",     "",  "bold", "",     "",    ""),
                 tab_inactive_style: ("dim",    "",  "",     "",     "",    ""),
+                tab_divider: " ",
+                cwd_format:         " \u{f0256} {cwd} ",
                 cwd_style:          ("cyan",   "",  "",     "thin", "dim", ""),
+                git_branch_format:  " \u{e0a0} {stdout} ",
                 git_branch_style:   ("orange", "",  "",     "thin", "dim", ""),
+                memory_format:      " \u{f035b} {stdout} ",
                 memory_style:       ("green",  "",  "",     "thin", "dim", ""),
+                date_format:        " \u{f00ed} {stdout} ",
                 date_style:         ("magenta","",  "",     "thin", "dim", ""),
+                time_format:        " \u{f0954} {stdout} ",
                 time_style:         ("blue",   "",  "",     "",     "",    ""),
             },
         }
@@ -455,6 +481,8 @@ pub(crate) struct HudConfig {
 
     /// Mode widget style.
     pub(crate) mode_style: WidgetStyle,
+    /// Mode format template. Placeholder: {content} (resolved mode text).
+    pub(crate) mode_format: String,
     /// Per-mode display content (e.g., "󰍀 NORMAL").
     pub(crate) mode_content: HashMap<InputMode, String>,
 
@@ -480,6 +508,8 @@ pub(crate) struct HudConfig {
 
     /// CWD widget style.
     pub(crate) cwd_style: WidgetStyle,
+    /// CWD format template. Placeholder: {cwd}.
+    pub(crate) cwd_format: String,
 
     /// User-defined command widgets, keyed by name.
     pub(crate) command_widgets: HashMap<String, CommandWidget>,
@@ -569,6 +599,7 @@ impl HudConfig {
 
             // v3 widget styles (defaults from style preset)
             mode_style: ws(sd.mode_style),
+            mode_format: sd.mode_format.to_string(),
             mode_content: HashMap::from([
                 (InputMode::Normal, "󰍀 NORMAL".to_string()),
                 (InputMode::Locked, "󰌾 LOCKED".to_string()),
@@ -586,15 +617,16 @@ impl HudConfig {
                 (InputMode::Tmux, "󰰣 TMUX".to_string()),
             ]),
             session_style: ws(sd.session_style),
-            session_format: "󰆍 {name}".to_string(),
+            session_format: sd.session_format.to_string(),
             tab_active_style: ws(sd.tab_active_style),
             tab_inactive_style: ws(sd.tab_inactive_style),
-            tab_format: "{name}".to_string(),
-            tab_divider: " ".to_string(),
+            tab_format: sd.tab_format.to_string(),
+            tab_divider: sd.tab_divider.to_string(),
             tab_sync_indicator: "🔗".to_string(),
             tab_fullscreen_indicator: "⛶".to_string(),
             tabs_separator: String::new(),
             cwd_style: ws(sd.cwd_style),
+            cwd_format: sd.cwd_format.to_string(),
             command_widgets: HashMap::new(),
             text_widgets: HashMap::new(),
             palette: palette.clone(),
@@ -678,6 +710,12 @@ impl HudConfig {
         }
 
         // v3 format overrides
+        if let Some(v) = config.get("mode_format") {
+            hud.mode_format = v.clone();
+        }
+        if let Some(v) = config.get("cwd_format") {
+            hud.cwd_format = v.clone();
+        }
         if let Some(v) = config.get("session_format") {
             hud.session_format = v.clone();
         }
@@ -710,25 +748,25 @@ impl HudConfig {
             ("time", CommandWidget {
                 command: "date +%H:%M".to_string(),
                 style: ws(sd.time_style),
-                format: "\u{f0954} {stdout}".to_string(),
+                format: sd.time_format.to_string(),
                 interval: 1,
             }),
             ("date", CommandWidget {
                 command: "date +\"%b %d\"".to_string(),
                 style: ws(sd.date_style),
-                format: "\u{f00ed} {stdout}".to_string(),
+                format: sd.date_format.to_string(),
                 interval: 60,
             }),
             ("memory", CommandWidget {
                 command: "free | awk '/Mem:/{printf \"%.0f%%\", $3/$2*100}'".to_string(),
                 style: ws(sd.memory_style),
-                format: "\u{f035b} {stdout}".to_string(),
+                format: sd.memory_format.to_string(),
                 interval: 5,
             }),
             ("git_branch", CommandWidget {
                 command: "git rev-parse --abbrev-ref HEAD 2>/dev/null".to_string(),
                 style: ws(sd.git_branch_style),
-                format: "\u{e0a0} {stdout}".to_string(),
+                format: sd.git_branch_format.to_string(),
                 interval: 10,
             }),
         ];
