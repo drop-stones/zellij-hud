@@ -3,6 +3,7 @@ mod commands;
 mod config;
 mod keybinds;
 pub(crate) mod render;
+mod spans;
 mod spawn;
 mod tooltip;
 
@@ -587,25 +588,22 @@ impl ZellijPlugin for State {
                     return;
                 }
                 let c = &self.hud_config;
-                let bg = c.resolve_color_with_accent(&c.bar_bg, &c.palette, self.mode).bg();
+                let bar_bg = c.resolve_color_with_accent(&c.bar_bg, &c.palette, self.mode);
+                let bar_bg_esc = bar_bg.bg();
                 let reset = "\x1b[0m";
-                let left = self.render_format(&self.hud_config.format_left.clone());
-                let right = self.render_format(&self.hud_config.format_right.clone());
+                let left = self.render_format(&self.hud_config.format_left.clone(), &bar_bg);
+                let right = self.render_format(&self.hud_config.format_right.clone(), &bar_bg);
 
                 let left_visible = visible_len(&left);
                 let right_visible = visible_len(&right);
                 let gap = cols.saturating_sub(left_visible + right_visible);
 
-                let mut output = String::new();
-                output.push_str(&bg);
-                output.push_str(&left);
-                output.push_str(&" ".repeat(gap));
-                output.push_str(&right);
-                output.push_str(reset);
-                // Replace resets with reset+bg to maintain background
-                let output = output.replace("\x1b[0m", &format!("\x1b[0m{bg}"));
-                // Final reset at the very end
-                print!("{}{}", output, reset);
+                // Each span already resets and re-applies its own style,
+                // so we only need bar_bg for the gap between left and right.
+                print!(
+                    "{bar_bg_esc}{left}{bar_bg_esc}{gap}{right}{reset}",
+                    gap = " ".repeat(gap),
+                );
             }
             Role::Tooltip => {
                 self.render_tooltip(_rows, cols);
