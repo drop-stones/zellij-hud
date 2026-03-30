@@ -26,7 +26,8 @@ Single WASM binary (`zellij-tile = "0.44.0"`), three roles distinguished by `Rol
 
 - `src/main.rs` — Plugin state, `Role` enum, event handling, role dispatch
 - `src/config.rs` — Configuration parsing, `Color` type, `ThemePalette`, theme presets, `WidgetStyle`, `StyleDefaults`
-- `src/render.rs` — Unified HUD status bar rendering (composable widget architecture)
+- `src/render.rs` — HUD render entry point (`render_format`), `visible_len`
+- `src/spans.rs` — Two-pass rendering: `Span`/`SpanColor` IR, flatten (pass 1), resolve + emit (pass 2)
 - `src/tooltip.rs` — Which-key tooltip rendering, dynamic resize
 - `src/keybinds.rs` — Keybinding extraction from `ModeInfo`
 - `src/action_types.rs` — `ActionType` categorization for icon colors
@@ -58,8 +59,9 @@ Single WASM binary (`zellij-tile = "0.44.0"`), three roles distinguished by `Rol
 - Composable widget architecture: all widgets (built-in and user-defined) render through the same uniform pipeline
 - Style presets (`style "minimal"` / `style "powerline"`) control format strings and default text widgets — no rendering branches
 - Separators are regular text widgets composed in format strings, not special-cased rendering logic
-- Style restore mechanism: `resolve_widget_refs` re-applies parent style after each child widget reset
-- HUD background color: `\x1b[0m` resets are replaced with `\x1b[0m{bg}` to maintain background across segments
+- Two-pass rendering pipeline (`src/spans.rs`): Pass 1 flattens format strings into `Vec<Span>` IR, Pass 2 resolves positional color refs and emits ANSI
+- Positional color refs: `prev_bg` / `next_bg` as special color values — forward pass resolves `prev_bg`, backward pass resolves `next_bg`, `bar_bg` as fallback
+- Tabs emit zero-width bar_bg anchor spans so positional refs resolve correctly at tab entry/exit boundaries
 
 ### Tab following
 
@@ -122,7 +124,7 @@ palette_cyan "#7dcfff"
 palette_orange "#ff9e64"
 ```
 
-Color values: palette name (`"blue"`, `"dim"`), hex (`"#7aa2f7"`), 8-bit (`"8bit:123"`), or `"accent"` (mode-dependent).
+Color values: palette name (`"blue"`, `"dim"`), hex (`"#7aa2f7"`), 8-bit (`"8bit:123"`), `"accent"` (mode-dependent), `"prev_bg"` (bg of preceding rendered text), or `"next_bg"` (bg of following rendered text).
 
 ### Mode accent color
 
@@ -310,7 +312,12 @@ System theme: `bg` = `ribbon_unselected.base` (maps to `palette.black` in zellij
 
 ### Rendering
 
-- [ ] **Positional color references**: Allow widgets to reference adjacent widgets' colors (e.g., `current_bg`, `right_bg`) for separator definitions. Would make powerline separators fully generic without hardcoded color values. `current_bg` = the bg of the parent widget containing this widget ref. `right_bg` = the bg of the next widget in the same format string. Requires 2-pass rendering (first pass resolves widget bg colors, second pass renders with positional refs). Complexity: empty widgets (e.g., git_branch outside a repo) must be skipped when resolving adjacency, and nested contexts (widget refs inside tab formats) make "adjacent" ambiguous.
+- [x] **Two-pass rendering pipeline**: Replaced single-pass ANSI string concatenation with a `Vec<Span>` IR. Pass 1 flattens widgets into spans, Pass 2 resolves positional color refs (`prev_bg`/`next_bg`) and emits ANSI. Eliminated `style_restore` mechanism and `\x1b[0m` replace hack. (`src/spans.rs`)
+- [x] **Positional color references**: `prev_bg` and `next_bg` as special color values in widget fg/bg. Forward pass resolves `prev_bg`, backward pass resolves `next_bg`, with `bar_bg` as fallback at boundaries. Tabs emit zero-width bar_bg anchor spans for correct resolution at tab boundaries.
+
+### Styles & Examples
+
+- [ ] Add 1–3 additional style presets or example configs (e.g., rounded separators, slant style, minimalist with accent borders) in `examples/`
 
 ### Tooltip
 
@@ -319,7 +326,7 @@ System theme: `bg` = `ribbon_unselected.base` (maps to `palette.black` in zellij
 ### Documentation
 
 - [ ] Update `README.md` with current configuration spec and usage examples
-- [ ] Update `../zellij-hud.wiki/` (Configuration.md, Architecture.md, etc.) to reflect composable widget architecture and current config keys
+- [ ] Update `../zellij-hud.wiki/` (Configuration.md, Architecture.md, etc.) to reflect composable widget architecture, two-pass rendering, and positional color refs
 
 ## Upstream proposals (zellij)
 
