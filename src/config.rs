@@ -704,12 +704,14 @@ impl HudConfig {
         for (name, widget) in defaults {
             hud.command_widgets.entry(name.to_string()).or_insert(widget);
         }
-        // Apply short-name style overrides (e.g., time_fg, memory_bg)
+        // Apply short-name style/format overrides (e.g., time_fg, git_branch_format)
         let widget_names: Vec<String> = hud.command_widgets.keys().cloned().collect();
         for name in &widget_names {
-            let mut style = hud.command_widgets[name].style.clone();
-            Self::parse_widget_style(config, name, &mut style);
-            hud.command_widgets.get_mut(name).unwrap().style = style;
+            let w = hud.command_widgets.get_mut(name).unwrap();
+            Self::parse_widget_style(config, name, &mut w.style);
+            if let Some(v) = config.get(&format!("{}_format", name)) {
+                w.format = v.clone();
+            }
         }
 
         // Default text widgets (separators) based on style preset.
