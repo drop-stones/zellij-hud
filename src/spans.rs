@@ -223,23 +223,84 @@ impl State {
             } else {
                 (&c.tab_inactive_style, &c.tab_inactive_format)
             };
-            let rs = self.resolve_style(style_def);
+            let tab_rs = self.resolve_style(style_def);
 
-            let mut content = tab_format
-                .replace("{name}", &tab.name)
-                .replace("{index}", &(i + 1).to_string());
-            if tab.is_sync_panes_active {
-                content = content.replace("{sync_indicator}", &c.tab_sync_indicator);
+            // Sub-placeholder styles (fallback to tab style)
+            let (idx_style, name_style, sync_style, fs_style) = if tab.active {
+                (
+                    &c.tab_active_index_style,
+                    &c.tab_active_name_style,
+                    &c.tab_active_sync_style,
+                    &c.tab_active_fullscreen_style,
+                )
             } else {
-                content = content.replace("{sync_indicator}", "");
-            }
-            if tab.is_fullscreen_active {
-                content = content.replace("{fullscreen_indicator}", &c.tab_fullscreen_indicator);
-            } else {
-                content = content.replace("{fullscreen_indicator}", "");
-            }
+                (
+                    &c.tab_inactive_index_style,
+                    &c.tab_inactive_name_style,
+                    &c.tab_inactive_sync_style,
+                    &c.tab_inactive_fullscreen_style,
+                )
+            };
 
-            self.flatten_format_with_style(&content, &rs, out, depth);
+            // Build substitution map: placeholder name → (text, optional style override)
+            let index_text = (i + 1).to_string();
+            let sync_text = if tab.is_sync_panes_active {
+                c.tab_sync_indicator.as_str()
+            } else {
+                ""
+            };
+            let fs_text = if tab.is_fullscreen_active {
+                c.tab_fullscreen_indicator.as_str()
+            } else {
+                ""
+            };
+            let subs: &[(&str, &str, &Option<WidgetStyle>)] = &[
+                ("index", &index_text, idx_style),
+                ("name", &tab.name, name_style),
+                ("sync_indicator", sync_text, sync_style),
+                ("fullscreen_indicator", fs_text, fs_style),
+            ];
+
+            // Tokenize the tab format and expand tokens
+            let tokens = tokenize(tab_format);
+            for token in tokens {
+                match token {
+                    Token::Literal(text) => {
+                        out.push(Span {
+                            text,
+                            fg: tab_rs.fg.clone(),
+                            bg: tab_rs.bg.clone(),
+                            attr: tab_rs.attr.clone(),
+                        });
+                    }
+                    Token::Ref(name) => {
+                        // Check if it's a tab sub-placeholder
+                        if let Some((_, value, style_override)) =
+                            subs.iter().find(|(ph, _, _)| *ph == name)
+                        {
+                            if !value.is_empty() {
+                                let rs = match style_override {
+                                    Some(s) => self.resolve_style(s),
+                                    None => ResolvedStyle {
+                                        fg: tab_rs.fg.clone(),
+                                        bg: tab_rs.bg.clone(),
+                                        attr: tab_rs.attr.clone(),
+                                    },
+                                };
+                                out.push(Span {
+                                    text: value.to_string(),
+                                    fg: rs.fg,
+                                    bg: rs.bg,
+                                    attr: rs.attr,
+                                });
+                            }
+                        } else {
+                            // Regular widget ref (e.g., {ta_in}, {pl_right})
+                            self.flatten_widget(&name, out, depth + 1);
+                        }
+                    }
+                }
+            }
         }
         // Anchor after last tab
         if !self.tabs.is_empty() {

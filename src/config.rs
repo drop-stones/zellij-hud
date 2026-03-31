@@ -434,6 +434,16 @@ pub(crate) struct HudConfig {
     pub(crate) tab_sync_indicator: String,
     /// Fullscreen indicator text (shown conditionally).
     pub(crate) tab_fullscreen_indicator: String,
+    /// Optional per-placeholder styles within tab formats.
+    /// When set, the placeholder text uses this style instead of the tab style.
+    pub(crate) tab_active_index_style: Option<WidgetStyle>,
+    pub(crate) tab_active_name_style: Option<WidgetStyle>,
+    pub(crate) tab_active_sync_style: Option<WidgetStyle>,
+    pub(crate) tab_active_fullscreen_style: Option<WidgetStyle>,
+    pub(crate) tab_inactive_index_style: Option<WidgetStyle>,
+    pub(crate) tab_inactive_name_style: Option<WidgetStyle>,
+    pub(crate) tab_inactive_sync_style: Option<WidgetStyle>,
+    pub(crate) tab_inactive_fullscreen_style: Option<WidgetStyle>,
 
     /// CWD widget style.
     pub(crate) cwd_style: WidgetStyle,
@@ -552,6 +562,14 @@ impl HudConfig {
             tab_inactive_format: sd.tab_inactive_format.to_string(),
             tab_sync_indicator: "🔗".to_string(),
             tab_fullscreen_indicator: "⛶".to_string(),
+            tab_active_index_style: None,
+            tab_active_name_style: None,
+            tab_active_sync_style: None,
+            tab_active_fullscreen_style: None,
+            tab_inactive_index_style: None,
+            tab_inactive_name_style: None,
+            tab_inactive_sync_style: None,
+            tab_inactive_fullscreen_style: None,
             cwd_style: ws(sd.cwd_style),
             cwd_format: sd.cwd_format.to_string(),
             command_widgets: HashMap::new(),
@@ -612,6 +630,15 @@ impl HudConfig {
         Self::parse_widget_style(config, "session", &mut hud.session_style);
         Self::parse_widget_style(config, "tab_active", &mut hud.tab_active_style);
         Self::parse_widget_style(config, "tab_inactive", &mut hud.tab_inactive_style);
+        // Tab sub-placeholder styles (optional, fallback to tab style)
+        hud.tab_active_index_style = Self::parse_optional_style(config, "tab_active_index");
+        hud.tab_active_name_style = Self::parse_optional_style(config, "tab_active_name");
+        hud.tab_active_sync_style = Self::parse_optional_style(config, "tab_active_sync");
+        hud.tab_active_fullscreen_style = Self::parse_optional_style(config, "tab_active_fullscreen");
+        hud.tab_inactive_index_style = Self::parse_optional_style(config, "tab_inactive_index");
+        hud.tab_inactive_name_style = Self::parse_optional_style(config, "tab_inactive_name");
+        hud.tab_inactive_sync_style = Self::parse_optional_style(config, "tab_inactive_sync");
+        hud.tab_inactive_fullscreen_style = Self::parse_optional_style(config, "tab_inactive_fullscreen");
 
         // v3 per-mode content overrides (new: mode_content_*, fallback: mode_*)
         let mode_content_map = [
@@ -892,6 +919,26 @@ impl HudConfig {
         }
         if let Some(v) = config.get(&format!("{}_attr", prefix)) {
             style.attr = v.clone();
+        }
+    }
+
+    /// Parse an optional widget style: returns `Some(style)` only if at least one
+    /// of `{prefix}_fg`, `{prefix}_bg`, `{prefix}_attr` is present in config.
+    fn parse_optional_style(
+        config: &BTreeMap<String, String>,
+        prefix: &str,
+    ) -> Option<WidgetStyle> {
+        let fg = config.get(&format!("{}_fg", prefix));
+        let bg = config.get(&format!("{}_bg", prefix));
+        let attr = config.get(&format!("{}_attr", prefix));
+        if fg.is_some() || bg.is_some() || attr.is_some() {
+            Some(WidgetStyle {
+                fg: fg.cloned().unwrap_or_default(),
+                bg: bg.cloned().unwrap_or_default(),
+                attr: attr.cloned().unwrap_or_default(),
+            })
+        } else {
+            None
         }
     }
 
