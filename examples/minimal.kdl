@@ -1,78 +1,58 @@
-// Minimal style with thin separators and no background segments.
-// Equivalent to the default style (no `style` key needed).
+// Minimal dotbar style: tabs as dots, mode as accent color indicator.
+// Near-zero visual footprint — information only when needed.
 //
 // Visual layout:
-//   Left:  mode | session | tab1 tab2 ...
-//   Right: cwd | git | memory | time
+//   Left:  ■  ● ○ ○
+//   Right: 21:00
 
 plugins {
     zellij-hud location="file:~/repos/zellij/zellij-hud/target/wasm32-wasip1/release/zellij-hud.wasm" {
 
         // === Global ===
-        theme "tokyonight"
-        // style "minimal"  // this is the default
+        theme "system"
 
         // === Layout ===
-        format_left  "{mode}{sep}{session}{sep}{tabs}"
-        format_right "{cwd}{git_branch}{sep}{memory}{sep}{time}"
-        bar_bg "bg"
+        format_left  "{mode} {tabs}"
+        format_right "{time}"
+        bar_bg ""
 
         // === Mode widget ===
-        mode_fg   "accent"
-        mode_bg   ""
-        mode_attr "bold"
+        // Shows a solid block whose color reflects the current mode.
+        mode_fg     "accent"
+        mode_bg     ""
+        mode_attr   ""
+        mode_content_normal      "■"
+        mode_content_locked      "■"
+        mode_content_pane        "■"
+        mode_content_tab         "■"
+        mode_content_resize      "■"
+        mode_content_move        "■"
+        mode_content_scroll      "■"
+        mode_content_search      "■"
+        mode_content_enter_search "■"
+        mode_content_rename_tab  "■"
+        mode_content_rename_pane "■"
+        mode_content_session     "■"
+        mode_content_prompt      "■"
+        mode_content_tmux        "■"
         mode_format " {content} "
-
-        // === Session widget ===
-        session_fg   "cyan"
-        session_bg   ""
-        session_attr ""
-        session_format " 󰇅 {name} "
 
         // === Tab widgets ===
         tab_active_fg   "fg"
         tab_active_bg   ""
-        tab_active_attr "bold"
-        tab_active_format " {name}"
+        tab_active_attr ""
+        tab_active_format "●"
 
         tab_inactive_fg   "dim"
         tab_inactive_bg   ""
         tab_inactive_attr ""
-        tab_inactive_format " {name}"
-
-        // === CWD widget ===
-        cwd_fg   "cyan"
-        cwd_bg   ""
-        cwd_attr ""
-        cwd_format " 󰉖 {cwd} "
-
-        // === Git branch (command widget) ===
-        // Leading {sep} hides the separator when not in a git repo.
-        git_branch_fg   "orange"
-        git_branch_bg   ""
-        git_branch_attr ""
-        git_branch_format "{sep}  {stdout} "
-
-        // === Memory (command widget) ===
-        memory_fg   "green"
-        memory_bg   ""
-        memory_attr ""
-        memory_format " 󰍛 {stdout} "
+        tab_inactive_format "○"
 
         // === Time (command widget) ===
-        time_fg   "blue"
-        time_bg   ""
-        time_attr ""
-        time_format " 󰥔 {stdout} "
-
-        // =====================================================
-        // Separator widget
-        // =====================================================
-
-        // Thin pipe divider
-        sep_content "|"
-        sep_fg "dim"
-        sep_bg ""
+        time_fg     "dim"
+        time_bg     ""
+        time_attr   ""
+        time_format " {stdout} "
     }
 }
 
