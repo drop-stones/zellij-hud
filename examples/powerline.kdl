@@ -1,5 +1,5 @@
-// Powerline style built from scratch without `style "powerline"`.
-// Uses prev_bg/next_bg positional color references for separators.
+// Powerline style with arrow separators using positional color refs.
+// Equivalent to `style "powerline"` but defined explicitly.
 //
 // Visual layout:
 //   Left:  [mode bg=accent][session bg=dim][tab1 tab2 ...]
@@ -30,12 +30,12 @@ plugins {
 
         // === Tab widgets ===
         tab_active_fg   "fg"
-        tab_active_bg   "#484848"
+        tab_active_bg   "surface_bright"
         tab_active_attr "bold"
         tab_active_format "{pl_right} {name} {pl_right}"
 
         tab_inactive_fg   "dim"
-        tab_inactive_bg   "#282828"
+        tab_inactive_bg   "surface"
         tab_inactive_attr ""
         tab_inactive_format "{pl_right} {name} {pl_right}"
 
