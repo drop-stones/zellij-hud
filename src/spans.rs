@@ -242,23 +242,29 @@ impl State {
                 )
             };
 
-            // Build substitution map: placeholder name → (text, optional style override)
+            // Build substitution map: placeholder → (value, format template, optional style)
             let index_text = (i + 1).to_string();
             let sync_text = if tab.is_sync_panes_active {
-                c.tab_sync_indicator.as_str()
+                c.tab_sync_indicator.clone()
             } else {
-                ""
+                String::new()
             };
             let fs_text = if tab.is_fullscreen_active {
-                c.tab_fullscreen_indicator.as_str()
+                c.tab_fullscreen_indicator.clone()
             } else {
-                ""
+                String::new()
             };
-            let subs: &[(&str, &str, &Option<WidgetStyle>)] = &[
-                ("index", &index_text, idx_style),
-                ("name", &tab.name, name_style),
-                ("sync_indicator", sync_text, sync_style),
-                ("fullscreen_indicator", fs_text, fs_style),
+            let (idx_fmt, name_fmt) = if tab.active {
+                (&c.tab_active_index_format, &c.tab_active_name_format)
+            } else {
+                (&c.tab_inactive_index_format, &c.tab_inactive_name_format)
+            };
+            // (placeholder, value, format template, optional style override)
+            let subs: &[(&str, &str, &str, &Option<WidgetStyle>)] = &[
+                ("index", &index_text, idx_fmt, idx_style),
+                ("name", &tab.name, name_fmt, name_style),
+                ("sync_indicator", &sync_text, "{content}", sync_style),
+                ("fullscreen_indicator", &fs_text, "{content}", fs_style),
             ];
 
             // Tokenize the tab format and expand tokens
@@ -275,8 +281,8 @@ impl State {
                     }
                     Token::Ref(name) => {
                         // Check if it's a tab sub-placeholder
-                        if let Some((_, value, style_override)) =
-                            subs.iter().find(|(ph, _, _)| *ph == name)
+                        if let Some((_, value, fmt, style_override)) =
+                            subs.iter().find(|(ph, _, _, _)| *ph == name)
                         {
                             if !value.is_empty() {
                                 let rs = match style_override {
@@ -287,12 +293,11 @@ impl State {
                                         attr: tab_rs.attr.clone(),
                                     },
                                 };
-                                out.push(Span {
-                                    text: value.to_string(),
-                                    fg: rs.fg,
-                                    bg: rs.bg,
-                                    attr: rs.attr,
-                                });
+                                // Apply format template and expand
+                                let formatted = fmt.replace("{content}", value);
+                                self.flatten_format_with_style(
+                                    &formatted, &rs, out, depth,
+                                );
                             }
                         } else {
                             // Regular widget ref (e.g., {ta_in}, {pl_right})

@@ -1,0 +1,133 @@
+// Bubble style with two-tone badges: colored icon + muted text area.
+// Each segment floats as an isolated pill on the bar background.
+// Tab index, widget icons get brighter accent backgrounds.
+//
+// Visual layout:
+//   Left:  (mode)ARROW (ICON session) (IDX name) (IDX name) ...
+//   Right: (ICON cwd) (ICON git) (ICON mem) (ICON time)
+
+plugins {
+    zellij-hud location="file:~/repos/zellij/zellij-hud/target/wasm32-wasip1/release/zellij-hud.wasm" {
+
+        // === Global ===
+        theme "catppuccin-mocha"
+
+        // === Layout ===
+        format_left  "{mode}{pill_right}{gap}{pill_left}{session}{pill_right}{tabs}"
+        format_right "{pill_left}{cwd}{pill_right} {git_branch}{pill_left}{memory}{pill_right} {pill_left}{time}{pill_right}"
+        bar_bg "bg"
+
+        // === Mode widget ===
+        mode_fg   "bg"
+        mode_bg   "accent"
+        mode_attr "bold"
+        mode_format " {content}"
+
+        // === Session widget (two-tone: icon badge + name) ===
+        session_fg   "cyan"
+        session_bg   "#313244"
+        session_attr ""
+        session_format "{sess_icon} {name}"
+
+        sess_icon_content "󰆍 "
+        sess_icon_fg  "bg"
+        sess_icon_bg  "cyan"
+        sess_icon_attr ""
+
+        // === Tab widgets ===
+        tab_active_fg   "fg"
+        tab_active_bg   "#45475a"
+        tab_active_attr ""
+        tab_active_format "{gap}{pill_left}{index}{name}{pill_right}"
+
+        tab_inactive_fg   "dim"
+        tab_inactive_bg   "#313244"
+        tab_inactive_attr ""
+        tab_inactive_format "{gap}{pill_left}{index}{name}{pill_right}"
+
+        // Two-tone tab index: badge with accent bg
+        tab_active_index_fg   "bg"
+        tab_active_index_bg   "blue"
+        tab_active_index_attr "bold"
+        tab_active_index_format "{content} "
+
+        tab_inactive_index_fg "bg"
+        tab_inactive_index_bg "#585b70"
+        tab_inactive_index_attr ""
+        tab_inactive_index_format "{content} "
+
+        tab_active_name_format " {content}"
+        tab_inactive_name_format " {content}"
+
+        // === CWD widget (two-tone: icon badge + path) ===
+        cwd_fg   "cyan"
+        cwd_bg   "#313244"
+        cwd_attr ""
+        cwd_format "{cwd_icon} {cwd}"
+
+        cwd_icon_content "󰉖 "
+        cwd_icon_fg  "bg"
+        cwd_icon_bg  "cyan"
+        cwd_icon_attr ""
+
+        // === Git branch (two-tone: icon badge + branch name) ===
+        // pill_left/pill_right inside format so pill hides when not in git repo.
+        git_branch_fg   "magenta"
+        git_branch_bg   "#313244"
+        git_branch_attr ""
+        git_branch_format "{pill_left}{git_icon} {stdout}{pill_right}{gap}"
+
+        git_icon_content " "
+        git_icon_fg  "bg"
+        git_icon_bg  "magenta"
+        git_icon_attr ""
+
+        // === Memory (two-tone: icon badge + value) ===
+        memory_fg   "green"
+        memory_bg   "#313244"
+        memory_attr ""
+        memory_format "{mem_icon} {stdout}"
+
+        mem_icon_content "󰍛 "
+        mem_icon_fg  "bg"
+        mem_icon_bg  "green"
+        mem_icon_attr ""
+
+        // === Time (two-tone: icon badge + value) ===
+        time_fg   "blue"
+        time_bg   "#313244"
+        time_attr ""
+        time_format "{time_icon} {stdout}"
+
+        time_icon_content "󰥔 "
+        time_icon_fg  "bg"
+        time_icon_bg  "blue"
+        time_icon_attr ""
+
+        // =====================================================
+        // Separator widgets
+        // =====================================================
+
+        // Powerline right arrow (mode exit)
+        pl_right_content ""
+        pl_right_fg "prev_bg"
+        pl_right_bg "next_bg"
+
+        // Rounded pill edges
+        pill_left_content ""
+        pill_left_fg "next_bg"
+        pill_left_bg ""
+
+        pill_right_content ""
+        pill_right_fg "prev_bg"
+        pill_right_bg ""
+
+        // Bar-bg gap between tabs
+        gap_content " "
+        gap_bg "bg"
+    }
+}
+
+load_plugins {
+    "zellij-hud"
+}

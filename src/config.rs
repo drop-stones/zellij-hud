@@ -81,6 +81,12 @@ struct StyleDefaults {
     tab_inactive_format: &'static str,
     tab_active_style: WStyle,
     tab_inactive_style: WStyle,
+    tab_active_index_style: Option<WStyle>,
+    tab_active_index_format: &'static str,
+    tab_active_name_format: &'static str,
+    tab_inactive_index_style: Option<WStyle>,
+    tab_inactive_index_format: &'static str,
+    tab_inactive_name_format: &'static str,
     cwd_format: &'static str,
     cwd_style: WStyle,
     date_format: &'static str,
@@ -116,6 +122,12 @@ impl StyleDefaults {
                 tab_inactive_format: "{ti_in} {name} {ti_out}",
                 tab_active_style:   ("fg",     "surface_bright", "bold"),
                 tab_inactive_style: ("dim",    "surface", ""),
+                tab_active_index_style: None,
+                tab_active_index_format: "{content}",
+                tab_active_name_format: "{content}",
+                tab_inactive_index_style: None,
+                tab_inactive_index_format: "{content}",
+                tab_inactive_name_format: "{content}",
                 cwd_format:         " \u{f0256} {cwd} ",
                 cwd_style:          ("cyan",   "",        ""),
                 git_branch_format:  "{s_cg} \u{e0a0} {stdout} ",
@@ -126,6 +138,42 @@ impl StyleDefaults {
                 date_style:         ("bg",     "accent",  ""),
                 time_format:        " \u{f0954} {stdout} ",
                 time_style:         ("bg",     "accent",  ""),
+            },
+            //
+            // Bubble: floating pill segments with two-tone icon badges.
+            // Separator text widgets (pill_left, pill_right, gap, icons)
+            // are defined as default text widgets in build_from_palette().
+            //
+            // Left:  [mode]╮ ╭ICON session╮ ╭IDX name╮ ╭IDX name╮
+            // Right: ╭ICON cwd╮ ╭ICON git╮ ╭ICON mem╮ ╭ICON time╮
+            "bubble" => Self {
+                format_left: "{mode}{pill_right}{gap}{pill_left}{session}{pill_right}{tabs}",
+                format_right: "{pill_left}{cwd}{pill_right} {git_branch}{pill_left}{memory}{pill_right} {pill_left}{time}{pill_right}",
+                bar_bg: "bg",
+                mode_format:        " {content}",
+                mode_style:         ("bg",     "accent",       "bold"),
+                session_format:     "{sess_icon} {name}",
+                session_style:      ("cyan",   "surface",      ""),
+                tab_active_format:  "{gap}{pill_left}{index}{name}{pill_right}",
+                tab_inactive_format: "{gap}{pill_left}{index}{name}{pill_right}",
+                tab_active_style:   ("fg",     "surface_bright", ""),
+                tab_inactive_style: ("dim",    "surface",        ""),
+                tab_active_index_style: Some(("bg", "blue", "bold")),
+                tab_active_index_format: "{content} ",
+                tab_active_name_format: " {content}",
+                tab_inactive_index_style: Some(("bg", "dim", "")),
+                tab_inactive_index_format: "{content} ",
+                tab_inactive_name_format: " {content}",
+                cwd_format:         "{cwd_icon} {cwd}",
+                cwd_style:          ("cyan",   "surface",      ""),
+                git_branch_format:  "{pill_left}{git_icon} {stdout}{pill_right}{gap}",
+                git_branch_style:   ("magenta","surface",      ""),
+                memory_format:      "{mem_icon} {stdout}",
+                memory_style:       ("green",  "surface",      ""),
+                date_format:        "{date_icon} {stdout}",
+                date_style:         ("magenta","surface",      ""),
+                time_format:        "{time_icon} {stdout}",
+                time_style:         ("blue",   "surface",      ""),
             },
             // "minimal" (default): flat look with thin separators.
             // A single "sep" text widget is defined in build_from_palette().
@@ -143,6 +191,12 @@ impl StyleDefaults {
                 tab_inactive_format: " {name}",
                 tab_active_style:   ("fg",     "",  "bold"),
                 tab_inactive_style: ("dim",    "",  ""),
+                tab_active_index_style: None,
+                tab_active_index_format: "{content}",
+                tab_active_name_format: "{content}",
+                tab_inactive_index_style: None,
+                tab_inactive_index_format: "{content}",
+                tab_inactive_name_format: "{content}",
                 cwd_format:         " \u{f0256} {cwd} ",
                 cwd_style:          ("cyan",   "",  ""),
                 git_branch_format:  "{sep} \u{e0a0} {stdout} ",
@@ -473,6 +527,11 @@ pub(crate) struct HudConfig {
     pub(crate) tab_inactive_name_style: Option<WidgetStyle>,
     pub(crate) tab_inactive_sync_style: Option<WidgetStyle>,
     pub(crate) tab_inactive_fullscreen_style: Option<WidgetStyle>,
+    /// Format templates for tab sub-placeholders. {content} is the value.
+    pub(crate) tab_active_index_format: String,
+    pub(crate) tab_active_name_format: String,
+    pub(crate) tab_inactive_index_format: String,
+    pub(crate) tab_inactive_name_format: String,
 
     /// CWD widget style.
     pub(crate) cwd_style: WidgetStyle,
@@ -591,14 +650,18 @@ impl HudConfig {
             tab_inactive_format: sd.tab_inactive_format.to_string(),
             tab_sync_indicator: "🔗".to_string(),
             tab_fullscreen_indicator: "⛶".to_string(),
-            tab_active_index_style: None,
+            tab_active_index_style: sd.tab_active_index_style.map(|s| ws(s)),
             tab_active_name_style: None,
             tab_active_sync_style: None,
             tab_active_fullscreen_style: None,
-            tab_inactive_index_style: None,
+            tab_inactive_index_style: sd.tab_inactive_index_style.map(|s| ws(s)),
             tab_inactive_name_style: None,
             tab_inactive_sync_style: None,
             tab_inactive_fullscreen_style: None,
+            tab_active_index_format: sd.tab_active_index_format.to_string(),
+            tab_active_name_format: sd.tab_active_name_format.to_string(),
+            tab_inactive_index_format: sd.tab_inactive_index_format.to_string(),
+            tab_inactive_name_format: sd.tab_inactive_name_format.to_string(),
             cwd_style: ws(sd.cwd_style),
             cwd_format: sd.cwd_format.to_string(),
             command_widgets: HashMap::new(),
@@ -668,6 +731,19 @@ impl HudConfig {
         hud.tab_inactive_name_style = Self::parse_optional_style(config, "tab_inactive_name");
         hud.tab_inactive_sync_style = Self::parse_optional_style(config, "tab_inactive_sync");
         hud.tab_inactive_fullscreen_style = Self::parse_optional_style(config, "tab_inactive_fullscreen");
+        // Tab sub-placeholder format overrides
+        if let Some(v) = config.get("tab_active_index_format") {
+            hud.tab_active_index_format = v.clone();
+        }
+        if let Some(v) = config.get("tab_active_name_format") {
+            hud.tab_active_name_format = v.clone();
+        }
+        if let Some(v) = config.get("tab_inactive_index_format") {
+            hud.tab_inactive_index_format = v.clone();
+        }
+        if let Some(v) = config.get("tab_inactive_name_format") {
+            hud.tab_inactive_name_format = v.clone();
+        }
 
         // v3 per-mode content overrides (new: mode_content_*, fallback: mode_*)
         let mode_content_map = [
@@ -790,6 +866,20 @@ impl HudConfig {
                 ("ta_out", tw("\u{e0b0}", "surface_bright",  "bg")),
                 ("ti_in",  tw("\u{e0b0}", "bg",             "surface")),
                 ("ti_out", tw("\u{e0b0}", "surface",         "bg")),
+            ],
+            "bubble" => vec![
+                // Rounded pill edges
+                ("pill_left",  tw("\u{e0b6}", "next_bg", "")),
+                ("pill_right", tw("\u{e0b4}", "prev_bg", "")),
+                // Bar-bg gap between tabs
+                ("gap", tw(" ", "", "bg")),
+                // Two-tone icon badges (icon + trailing space as padding)
+                ("sess_icon", tw("\u{f018d} ", "bg", "cyan")),
+                ("cwd_icon",  tw("\u{f0256} ", "bg", "cyan")),
+                ("git_icon",  tw("\u{e0a0} ",  "bg", "magenta")),
+                ("mem_icon",  tw("\u{f035b} ", "bg", "green")),
+                ("time_icon", tw("\u{f0954} ", "bg", "blue")),
+                ("date_icon", tw("\u{f00ed} ", "bg", "magenta")),
             ],
             _ => vec![
                 ("sep", tw("|", "dim", "")),
