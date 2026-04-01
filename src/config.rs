@@ -114,8 +114,8 @@ impl StyleDefaults {
                 session_style:      ("accent", "dim",     ""),
                 tab_active_format:  "{ta_in} {name} {ta_out}",
                 tab_inactive_format: "{ti_in} {name} {ti_out}",
-                tab_active_style:   ("fg",     "#484848", "bold"),
-                tab_inactive_style: ("dim",    "#282828", ""),
+                tab_active_style:   ("fg",     "surface_bright", "bold"),
+                tab_inactive_style: ("dim",    "surface", ""),
                 cwd_format:         " \u{f0256} {cwd} ",
                 cwd_style:          ("cyan",   "",        ""),
                 git_branch_format:  "{s_cg} \u{e0a0} {stdout} ",
@@ -158,13 +158,15 @@ impl StyleDefaults {
     }
 }
 
-/// 10-color palette used to derive all UI colors.
+/// 12-color palette used to derive all UI colors.
 /// Stored in HudConfig for runtime color resolution (accent, palette names).
 #[derive(Clone)]
 pub(crate) struct ThemePalette {
     pub(crate) fg: String,
     pub(crate) bg: String,
     pub(crate) dim: String,
+    pub(crate) surface: String,
+    pub(crate) surface_bright: String,
     pub(crate) red: String,
     pub(crate) green: String,
     pub(crate) yellow: String,
@@ -185,10 +187,13 @@ impl ThemePalette {
         // old-style palette themes don't define gray and new-style themes may
         // assign arbitrary colors. A dimmed fg is consistently readable.
         let dim = dim_color(fg);
+        let bg = s.text_unselected.background;
         Self {
             fg: palette_color_to_hex(fg),
-            bg: palette_color_to_hex(s.text_unselected.background),
+            bg: palette_color_to_hex(bg),
             dim: palette_color_to_hex(dim),
+            surface: palette_color_to_hex(lighten_color(bg, 10)),
+            surface_bright: palette_color_to_hex(lighten_color(bg, 20)),
             red: palette_color_to_hex(s.exit_code_error.base),
             green: palette_color_to_hex(s.exit_code_success.base),
             yellow: palette_color_to_hex(s.exit_code_error.emphasis_0),
@@ -206,6 +211,8 @@ impl ThemePalette {
                 fg: "#cdd6f4".into(),
                 bg: "#1e1e2e".into(),
                 dim: "#585b70".into(),
+                surface: "#313244".into(),
+                surface_bright: "#45475a".into(),
                 red: "#f38ba8".into(),
                 green: "#a6e3a1".into(),
                 yellow: "#f9e2af".into(),
@@ -218,6 +225,8 @@ impl ThemePalette {
                 fg: "#eceff4".into(),
                 bg: "#2e3440".into(),
                 dim: "#4c566a".into(),
+                surface: "#3b4252".into(),
+                surface_bright: "#434c5e".into(),
                 red: "#bf616a".into(),
                 green: "#a3be8c".into(),
                 yellow: "#ebcb8b".into(),
@@ -230,6 +239,8 @@ impl ThemePalette {
                 fg: "#ebdbb2".into(),
                 bg: "#282828".into(),
                 dim: "#665c54".into(),
+                surface: "#3c3836".into(),
+                surface_bright: "#504945".into(),
                 red: "#fb4934".into(),
                 green: "#b8bb26".into(),
                 yellow: "#fabd2f".into(),
@@ -255,6 +266,8 @@ impl ThemePalette {
         override_field!("palette_fg", self.fg);
         override_field!("palette_bg", self.bg);
         override_field!("palette_dim", self.dim);
+        override_field!("palette_surface", self.surface);
+        override_field!("palette_surface_bright", self.surface_bright);
         override_field!("palette_red", self.red);
         override_field!("palette_green", self.green);
         override_field!("palette_yellow", self.yellow);
@@ -272,6 +285,8 @@ impl ThemePalette {
             "fg" => Some(&self.fg),
             "bg" => Some(&self.bg),
             "dim" => Some(&self.dim),
+            "surface" => Some(&self.surface),
+            "surface_bright" => Some(&self.surface_bright),
             "red" => Some(&self.red),
             "green" => Some(&self.green),
             "yellow" => Some(&self.yellow),
@@ -293,6 +308,18 @@ fn dim_color(color: PaletteColor) -> PaletteColor {
     }
 }
 
+/// Lighten a color by adding `amount` to each RGB channel (clamped to 255).
+fn lighten_color(color: PaletteColor, amount: u8) -> PaletteColor {
+    match color {
+        PaletteColor::Rgb((r, g, b)) => PaletteColor::Rgb((
+            r.saturating_add(amount),
+            g.saturating_add(amount),
+            b.saturating_add(amount),
+        )),
+        PaletteColor::EightBit(_) => PaletteColor::EightBit(8),
+    }
+}
+
 /// Convert a `PaletteColor` to a hex string usable by `Color::from_hex`.
 /// Rgb → "#rrggbb", EightBit → "8bit:N".
 fn palette_color_to_hex(color: PaletteColor) -> String {
@@ -308,6 +335,8 @@ impl Default for ThemePalette {
             fg: "#c0caf5".into(),
             bg: "#1a1b26".into(),
             dim: "#565f89".into(),
+            surface: "#24283b".into(),
+            surface_bright: "#292e42".into(),
             red: "#f7768e".into(),
             green: "#9ece6a".into(),
             yellow: "#e0af68".into(),
@@ -757,10 +786,10 @@ impl HudConfig {
                 ("s_gm", tw("\u{e0b2}", "dim",    "")),         // git → memory
                 ("s_mt", tw("\u{e0b2}", "accent", "dim")),      // memory → time
                 // Tab powerline separators (entry/exit arrows)
-                ("ta_in",  tw("\u{e0b0}", "bg",      "#484848")),
-                ("ta_out", tw("\u{e0b0}", "#484848", "bg")),
-                ("ti_in",  tw("\u{e0b0}", "bg",      "#282828")),
-                ("ti_out", tw("\u{e0b0}", "#282828", "bg")),
+                ("ta_in",  tw("\u{e0b0}", "bg",             "surface_bright")),
+                ("ta_out", tw("\u{e0b0}", "surface_bright",  "bg")),
+                ("ti_in",  tw("\u{e0b0}", "bg",             "surface")),
+                ("ti_out", tw("\u{e0b0}", "surface",         "bg")),
             ],
             _ => vec![
                 ("sep", tw("|", "dim", "")),
