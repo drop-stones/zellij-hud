@@ -592,17 +592,31 @@ impl ZellijPlugin for State {
                 let bar_bg_esc = bar_bg.bg();
                 let reset = "\x1b[0m";
                 let left = self.render_format(&self.hud_config.format_left.clone(), &bar_bg);
+                let center_fmt = self.hud_config.format_center.clone();
                 let right = self.render_format(&self.hud_config.format_right.clone(), &bar_bg);
 
-                let left_visible = visible_len(&left);
-                let right_visible = visible_len(&right);
-                let gap = cols.saturating_sub(left_visible + right_visible);
+                let center = if center_fmt.is_empty() {
+                    String::new()
+                } else {
+                    self.render_format(&center_fmt, &bar_bg)
+                };
 
-                // Each span already resets and re-applies its own style,
-                // so we only need bar_bg for the gap between left and right.
+                let left_visible   = visible_len(&left);
+                let center_visible = visible_len(&center);
+                let right_visible  = visible_len(&right);
+
+                // Distribute remaining space so that center sits at the absolute
+                // middle of the bar.  Guarantee left_gap + right_gap == remaining
+                // to prevent the total from exceeding cols on overflow.
+                let remaining    = cols.saturating_sub(left_visible + center_visible + right_visible);
+                let center_start = (cols.saturating_sub(center_visible)) / 2;
+                let left_gap     = center_start.saturating_sub(left_visible).min(remaining);
+                let right_gap    = remaining - left_gap;
+
                 print!(
-                    "{bar_bg_esc}{left}{bar_bg_esc}{gap}{right}{reset}",
-                    gap = " ".repeat(gap),
+                    "{bar_bg_esc}{left}{bar_bg_esc}{lg}{center}{bar_bg_esc}{rg}{right}{reset}",
+                    lg = " ".repeat(left_gap),
+                    rg = " ".repeat(right_gap),
                 );
             }
             Role::Tooltip => {

@@ -458,6 +458,7 @@ pub(crate) struct TextWidget {
 
 pub(crate) struct HudConfig {
     pub(crate) format_left: String,
+    pub(crate) format_center: String,
     pub(crate) format_right: String,
     /// HUD bar background color (palette name or hex, resolved at render time).
     pub(crate) bar_bg: String,
@@ -605,6 +606,7 @@ impl HudConfig {
 
         let mut hud = Self {
             format_left: sd.format_left.to_string(),
+            format_center: String::new(),
             format_right: sd.format_right.to_string(),
             bar_bg: sd.bar_bg.to_string(),
             icon_colors,
@@ -898,6 +900,9 @@ impl HudConfig {
 
         if let Some(v) = config.get("format_left") {
             hud.format_left = v.clone();
+        }
+        if let Some(v) = config.get("format_center") {
+            hud.format_center = v.clone();
         }
         if let Some(v) = config.get("format_right") {
             hud.format_right = v.clone();
