@@ -518,6 +518,8 @@ pub(crate) struct HudConfig {
     pub(crate) tab_sync_indicator: String,
     /// Fullscreen indicator text (shown conditionally).
     pub(crate) tab_fullscreen_indicator: String,
+    /// Separator text inserted between adjacent tabs. Default: empty string.
+    pub(crate) tab_separator: String,
     /// Optional per-placeholder styles within tab formats.
     /// When set, the placeholder text uses this style instead of the tab style.
     pub(crate) tab_active_index_style: Option<WidgetStyle>,
@@ -652,6 +654,7 @@ impl HudConfig {
             tab_inactive_format: sd.tab_inactive_format.to_string(),
             tab_sync_indicator: "🔗".to_string(),
             tab_fullscreen_indicator: "⛶".to_string(),
+            tab_separator: String::new(),
             tab_active_index_style: sd.tab_active_index_style.map(|s| ws(s)),
             tab_active_name_style: None,
             tab_active_sync_style: None,
@@ -792,6 +795,9 @@ impl HudConfig {
         }
         if let Some(v) = config.get("tab_inactive_format") {
             hud.tab_inactive_format = v.clone();
+        }
+        if let Some(v) = config.get("tab_separator") {
+            hud.tab_separator = v.clone();
         }
         if let Some(v) = config.get("tab_sync_indicator") {
             hud.tab_sync_indicator = v.clone();

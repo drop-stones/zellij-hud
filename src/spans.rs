@@ -218,6 +218,17 @@ impl State {
             // Anchor before each tab: represents the bar_bg gap
             out.push(anchor());
 
+            // Inter-tab separator (dim fg, bar_bg background)
+            if i > 0 && !c.tab_separator.is_empty() {
+                out.push(Span {
+                    text: c.tab_separator.clone(),
+                    fg: SpanColor::Concrete(c.resolve_color_with_accent(&c.palette.dim, &c.palette, self.mode)),
+                    bg: SpanColor::Concrete(bar_bg.clone()),
+                    attr: String::new(),
+                });
+                out.push(anchor());
+            }
+
             let (style_def, tab_format) = if tab.active {
                 (&c.tab_active_style, &c.tab_active_format)
             } else {
