@@ -1,8 +1,8 @@
-// Minimal dotbar style: session on the left, tabs centered with dot separators,
-// time on the right. Near-zero visual footprint — no icons, no backgrounds.
+// Minimal dotbar style: mode indicator on the left, tabs centered with dot
+// separators, time on the right. Near-zero visual footprint.
 //
 // Visual layout:
-//   Left:   ■  mysession
+//   Left:   󰍀 normal
 //   Center: tab1 • tab2 • tab3
 //   Right:  21:00
 
@@ -13,40 +13,33 @@ plugins {
         theme "system"
 
         // === Layout ===
-        format_left   "{mode} {session}"
+        format_left   "{mode}"
         format_center "{tabs}"
         format_right  "{time}"
         bar_bg ""
 
         // === Mode widget ===
-        // Compact accent-colored block reflecting current mode.
-        mode_fg     "accent"
-        mode_bg     ""
+        // Icon + lowercase name, accent background.
+        mode_fg     "bg"
+        mode_bg     "accent"
         mode_attr   ""
-        mode_content_normal      "■"
-        mode_content_locked      "■"
-        mode_content_pane        "■"
-        mode_content_tab         "■"
-        mode_content_resize      "■"
-        mode_content_move        "■"
-        mode_content_scroll      "■"
-        mode_content_search      "■"
-        mode_content_enter_search "■"
-        mode_content_rename_tab  "■"
-        mode_content_rename_pane "■"
-        mode_content_session     "■"
-        mode_content_prompt      "■"
-        mode_content_tmux        "■"
-        mode_format " {content}"
-
-        // === Session widget ===
-        session_fg     "dim"
-        session_bg     ""
-        session_attr   ""
-        session_format " {name} "
+        mode_content_normal       "󰍀 normal"
+        mode_content_locked       "󰌾 locked"
+        mode_content_pane         "󰘖 pane"
+        mode_content_tab          "󰓩 tab"
+        mode_content_resize       "󰩨 resize"
+        mode_content_move         "󰆾 move"
+        mode_content_scroll       "󰠶 scroll"
+        mode_content_search       "󰍉 search"
+        mode_content_enter_search "󰍉 search"
+        mode_content_rename_tab   "󰏫 rename tab"
+        mode_content_rename_pane  "󰏫 rename pane"
+        mode_content_session      "󱂬 session"
+        mode_content_prompt       "󰘥 prompt"
+        mode_content_tmux         "󰰣 tmux"
+        mode_format " {content} "
 
         // === Tab widgets ===
-        // Dot separator between tabs, brighter for the active one.
         tab_active_fg   "fg"
         tab_active_bg   ""
         tab_active_attr "bold"
