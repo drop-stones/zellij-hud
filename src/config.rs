@@ -71,14 +71,20 @@ type WStyle = (&'static str, &'static str, &'static str);
 /// Provides default widget styles; user overrides apply on top.
 struct StyleDefaults {
     format_left: &'static str,
+    format_center: &'static str,
     format_right: &'static str,
     bar_bg: &'static str,
     mode_format: &'static str,
     mode_style: WStyle,
+    /// Per-mode content overrides: (mode_suffix, content_text).
+    /// mode_suffix corresponds to the suffix in `mode_content_{suffix}` config keys.
+    /// Empty slice = use global defaults (icons + uppercase names).
+    mode_content: &'static [(&'static str, &'static str)],
     session_format: &'static str,
     session_style: WStyle,
     tab_active_format: &'static str,
     tab_inactive_format: &'static str,
+    tab_separator: &'static str,
     tab_active_style: WStyle,
     tab_inactive_style: WStyle,
     tab_active_index_style: Option<WStyle>,
@@ -111,15 +117,18 @@ impl StyleDefaults {
             // Left:  [mode bg=accent]▶[session bg=dim]▶[tabs]
             // Right: [cwd]▸[git]◂[memory bg=dim]◂[time bg=accent]
             "powerline" => Self {
-                format_left: "{mode}{s_ms}{session}{s_sb}{tabs}",
-                format_right: "{cwd}{git_branch}{s_gm}{memory}{s_mt}{time}",
+                format_left:   "{mode}{s_ms}{session}{s_sb}{tabs}",
+                format_center: "",
+                format_right:  "{cwd}{git_branch}{s_gm}{memory}{s_mt}{time}",
                 bar_bg: "bg",
                 mode_format:        " {content} ",
                 mode_style:         ("bg",     "accent",  "bold"),
+                mode_content:       &[],
                 session_format:     " 󰆍 {name} ",
                 session_style:      ("accent", "dim",     ""),
                 tab_active_format:  "{ta_in} {name} {ta_out}",
                 tab_inactive_format: "{ti_in} {name} {ti_out}",
+                tab_separator:      "",
                 tab_active_style:   ("fg",     "surface_bright", "bold"),
                 tab_inactive_style: ("dim",    "surface", ""),
                 tab_active_index_style: None,
@@ -147,15 +156,18 @@ impl StyleDefaults {
             // Left:  [mode]╮ ╭ICON session╮ ╭IDX name╮ ╭IDX name╮
             // Right: ╭ICON cwd╮ ╭ICON git╮ ╭ICON mem╮ ╭ICON time╮
             "bubble" => Self {
-                format_left: "{mode}{pill_right}{gap}{pill_left}{session}{pill_right}{tabs}",
-                format_right: "{pill_left}{cwd}{pill_right} {git_branch}{pill_left}{memory}{pill_right} {pill_left}{time}{pill_right}",
+                format_left:   "{mode}{pill_right}{gap}{pill_left}{session}{pill_right}{tabs}",
+                format_center: "",
+                format_right:  "{pill_left}{cwd}{pill_right} {git_branch}{pill_left}{memory}{pill_right} {pill_left}{time}{pill_right}",
                 bar_bg: "bg",
                 mode_format:        " {content}",
                 mode_style:         ("bg",     "accent",       "bold"),
+                mode_content:       &[],
                 session_format:     "{sess_icon} {name}",
                 session_style:      ("cyan",   "surface",      ""),
                 tab_active_format:  "{gap}{pill_left}{index}{name}{pill_right}",
                 tab_inactive_format: "{gap}{pill_left}{index}{name}{pill_right}",
+                tab_separator:      "",
                 tab_active_style:   ("fg",     "surface_bright", ""),
                 tab_inactive_style: ("dim",    "surface",        ""),
                 tab_active_index_style: Some(("bg", "blue", "bold")),
@@ -175,20 +187,77 @@ impl StyleDefaults {
                 time_format:        "{time_icon} {stdout}",
                 time_style:         ("blue",   "surface",      ""),
             },
-            // "minimal" (default): flat look with thin separators.
+            //
+            // Minimal: dotbar style — mode indicator left, tabs centered with
+            // dot separators, time right. No icons, no segment backgrounds.
+            //
+            // Left:   󰍀 normal
+            // Center: tab1 • tab2 • tab3
+            // Right:  21:00
+            "minimal" => Self {
+                format_left:   "{mode}",
+                format_center: "{tabs}",
+                format_right:  "{time}",
+                bar_bg: "",
+                mode_format:        " {content} ",
+                mode_style:         ("bg",     "accent",  ""),
+                mode_content: &[
+                    ("normal",       "\u{f0340} normal"),
+                    ("locked",       "\u{f033e} locked"),
+                    ("pane",         "\u{f0616} pane"),
+                    ("tab",          "\u{f04e9} tab"),
+                    ("resize",       "\u{f0a68} resize"),
+                    ("move",         "\u{f01be} move"),
+                    ("scroll",       "\u{f0836} scroll"),
+                    ("search",       "\u{f0349} search"),
+                    ("enter_search", "\u{f0349} search"),
+                    ("rename_tab",   "\u{f03eb} rename tab"),
+                    ("rename_pane",  "\u{f03eb} rename pane"),
+                    ("session",      "\u{f10ac} session"),
+                    ("prompt",       "\u{f0625} prompt"),
+                    ("tmux",         "\u{f0c23} tmux"),
+                ],
+                session_format:     " {name} ",
+                session_style:      ("dim",    "",        ""),
+                tab_active_format:  "{name}",
+                tab_inactive_format: "{name}",
+                tab_separator:      " • ",
+                tab_active_style:   ("fg",     "",  "bold"),
+                tab_inactive_style: ("dim",    "",  ""),
+                tab_active_index_style: None,
+                tab_active_index_format: "{content}",
+                tab_active_name_format: "{content}",
+                tab_inactive_index_style: None,
+                tab_inactive_index_format: "{content}",
+                tab_inactive_name_format: "{content}",
+                cwd_format:         " \u{f0256} {cwd} ",
+                cwd_style:          ("cyan",   "",  ""),
+                git_branch_format:  " \u{e0a0} {stdout} ",
+                git_branch_style:   ("orange", "",  ""),
+                memory_format:      " \u{f035b} {stdout} ",
+                memory_style:       ("green",  "",  ""),
+                date_format:        " \u{f00ed} {stdout} ",
+                date_style:         ("magenta","",  ""),
+                time_format:        " {stdout} ",
+                time_style:         ("dim",    "",  ""),
+            },
+            // "simple" (default): flat look with thin separators and icons.
             // A single "sep" text widget is defined in build_from_palette().
             // git_branch includes a leading {sep} so the separator hides
             // when the widget is empty (not in a git repo).
             _ => Self {
-                format_left: "{mode}{sep}{session}{sep}{tabs}",
-                format_right: "{cwd}{git_branch}{sep}{memory}{sep}{time}",
+                format_left:   "{mode}{sep}{session}{sep}{tabs}",
+                format_center: "",
+                format_right:  "{cwd}{git_branch}{sep}{memory}{sep}{time}",
                 bar_bg: "bg",
                 mode_format:        " {content} ",
                 mode_style:         ("accent", "",  "bold"),
+                mode_content:       &[],
                 session_format:     " 󰆍 {name} ",
                 session_style:      ("cyan",   "",  ""),
                 tab_active_format:  " {name}",
                 tab_inactive_format: " {name}",
+                tab_separator:      "",
                 tab_active_style:   ("fg",     "",  "bold"),
                 tab_inactive_style: ("dim",    "",  ""),
                 tab_active_index_style: None,
@@ -608,7 +677,7 @@ impl HudConfig {
 
         let mut hud = Self {
             format_left: sd.format_left.to_string(),
-            format_center: String::new(),
+            format_center: sd.format_center.to_string(),
             format_right: sd.format_right.to_string(),
             bar_bg: sd.bar_bg.to_string(),
             icon_colors,
@@ -654,7 +723,7 @@ impl HudConfig {
             tab_inactive_format: sd.tab_inactive_format.to_string(),
             tab_sync_indicator: "🔗".to_string(),
             tab_fullscreen_indicator: "⛶".to_string(),
-            tab_separator: String::new(),
+            tab_separator: sd.tab_separator.to_string(),
             tab_active_index_style: sd.tab_active_index_style.map(|s| ws(s)),
             tab_active_name_style: None,
             tab_active_sync_style: None,
@@ -767,6 +836,14 @@ impl HudConfig {
             ("mode_content_prompt", "mode_prompt", InputMode::Prompt),
             ("mode_content_tmux", "mode_tmux", InputMode::Tmux),
         ];
+        // Apply style preset mode_content defaults first, then user config overrides
+        for (suffix, content) in sd.mode_content {
+            // Find the InputMode for this suffix via mode_content_map
+            let key = format!("mode_content_{}", suffix);
+            if let Some((_, _, mode)) = mode_content_map.iter().find(|(k, _, _)| *k == key) {
+                hud.mode_content.insert(*mode, content.to_string());
+            }
+        }
         for (new_key, old_key, mode) in &mode_content_map {
             if let Some(v) = config.get(*new_key) {
                 hud.mode_content.insert(*mode, v.clone());
@@ -889,6 +966,7 @@ impl HudConfig {
                 ("time_icon", tw("\u{f0954} ", "bg", "blue")),
                 ("date_icon", tw("\u{f00ed} ", "bg", "magenta")),
             ],
+            "minimal" => vec![],
             _ => vec![
                 ("sep", tw("|", "dim", "")),
             ],

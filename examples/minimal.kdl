@@ -1,5 +1,6 @@
 // Minimal dotbar style: mode indicator on the left, tabs centered with dot
 // separators, time on the right. Near-zero visual footprint.
+// Equivalent to `style "minimal"` but defined explicitly.
 //
 // Visual layout:
 //   Left:   󰍀 normal
@@ -19,10 +20,10 @@ plugins {
         bar_bg ""
 
         // === Mode widget ===
-        // Icon + lowercase name, accent background.
         mode_fg     "bg"
         mode_bg     "accent"
         mode_attr   ""
+        mode_format " {content} "
         mode_content_normal       "󰍀 normal"
         mode_content_locked       "󰌾 locked"
         mode_content_pane         "󰘖 pane"
@@ -37,7 +38,6 @@ plugins {
         mode_content_session      "󱂬 session"
         mode_content_prompt       "󰘥 prompt"
         mode_content_tmux         "󰰣 tmux"
-        mode_format " {content} "
 
         // === Tab widgets ===
         tab_active_fg   "fg"
