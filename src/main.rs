@@ -613,8 +613,12 @@ impl ZellijPlugin for State {
                 let left_gap     = center_start.saturating_sub(left_visible).min(remaining);
                 let right_gap    = remaining - left_gap;
 
+                // gap_bg: always reset before gap spaces so the last widget's
+                // background colour does not bleed into the empty space.
+                let gap_bg = format!("{reset}{bar_bg_esc}");
+
                 print!(
-                    "{bar_bg_esc}{left}{bar_bg_esc}{lg}{center}{bar_bg_esc}{rg}{right}{reset}",
+                    "{bar_bg_esc}{left}{gap_bg}{lg}{center}{gap_bg}{rg}{right}{reset}",
                     lg = " ".repeat(left_gap),
                     rg = " ".repeat(right_gap),
                 );
