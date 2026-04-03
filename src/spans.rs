@@ -218,13 +218,14 @@ impl State {
             // Anchor before each tab: represents the bar_bg gap
             out.push(anchor());
 
-            // Inter-tab separator (dim fg, bar_bg background)
+            // Inter-tab separator with configurable style
             if i > 0 && !c.tab_separator.is_empty() {
+                let sep_rs = self.resolve_style(&c.tab_separator_style);
                 out.push(Span {
                     text: c.tab_separator.clone(),
-                    fg: SpanColor::Concrete(c.resolve_color_with_accent(&c.palette.dim, &c.palette, self.mode)),
-                    bg: SpanColor::Concrete(bar_bg.clone()),
-                    attr: String::new(),
+                    fg: sep_rs.fg,
+                    bg: sep_rs.bg,
+                    attr: sep_rs.attr,
                 });
                 out.push(anchor());
             }

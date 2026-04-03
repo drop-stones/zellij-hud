@@ -85,6 +85,7 @@ struct StyleDefaults {
     tab_active_format: &'static str,
     tab_inactive_format: &'static str,
     tab_separator: &'static str,
+    tab_separator_style: WStyle,
     tab_active_style: WStyle,
     tab_inactive_style: WStyle,
     tab_active_index_style: Option<WStyle>,
@@ -129,6 +130,7 @@ impl StyleDefaults {
                 tab_active_format:  "{ta_in} {name} {ta_out}",
                 tab_inactive_format: "{ti_in} {name} {ti_out}",
                 tab_separator:      "",
+                tab_separator_style: ("dim",   "",  ""),
                 tab_active_style:   ("fg",     "surface_bright", "bold"),
                 tab_inactive_style: ("dim",    "surface", ""),
                 tab_active_index_style: None,
@@ -168,6 +170,7 @@ impl StyleDefaults {
                 tab_active_format:  "{gap}{pill_left}{index}{name}{pill_right}",
                 tab_inactive_format: "{gap}{pill_left}{index}{name}{pill_right}",
                 tab_separator:      "",
+                tab_separator_style: ("dim",   "",  ""),
                 tab_active_style:   ("fg",     "surface_bright", ""),
                 tab_inactive_style: ("dim",    "surface",        ""),
                 tab_active_index_style: Some(("bg", "blue", "bold")),
@@ -221,7 +224,8 @@ impl StyleDefaults {
                 session_style:      ("dim",    "",        ""),
                 tab_active_format:  "{name}",
                 tab_inactive_format: "{name}",
-                tab_separator:      " • ",
+                tab_separator:      " \u{2022} ",
+                tab_separator_style: ("dim",   "",  ""),
                 tab_active_style:   ("fg",     "",  "bold"),
                 tab_inactive_style: ("dim",    "",  ""),
                 tab_active_index_style: None,
@@ -258,6 +262,7 @@ impl StyleDefaults {
                 tab_active_format:  " {name}",
                 tab_inactive_format: " {name}",
                 tab_separator:      "",
+                tab_separator_style: ("dim",   "",  ""),
                 tab_active_style:   ("fg",     "",  "bold"),
                 tab_inactive_style: ("dim",    "",  ""),
                 tab_active_index_style: None,
@@ -589,6 +594,8 @@ pub(crate) struct HudConfig {
     pub(crate) tab_fullscreen_indicator: String,
     /// Separator text inserted between adjacent tabs. Default: empty string.
     pub(crate) tab_separator: String,
+    /// Tab separator style.
+    pub(crate) tab_separator_style: WidgetStyle,
     /// Optional per-placeholder styles within tab formats.
     /// When set, the placeholder text uses this style instead of the tab style.
     pub(crate) tab_active_index_style: Option<WidgetStyle>,
@@ -654,7 +661,7 @@ impl HudConfig {
 
     fn build_from_palette(palette: &ThemePalette, config: &BTreeMap<String, String>) -> Self {
         let ws = |s: WStyle| WidgetStyle::new(s.0, s.1, s.2);
-        let style_name = config.get("style").map(|s| s.as_str()).unwrap_or("minimal");
+        let style_name = config.get("style").map(|s| s.as_str()).unwrap_or("simple");
         let sd = StyleDefaults::from_name(style_name);
         let icon_colors = IconColors::from_palette(palette);
 
@@ -724,6 +731,7 @@ impl HudConfig {
             tab_sync_indicator: "🔗".to_string(),
             tab_fullscreen_indicator: "⛶".to_string(),
             tab_separator: sd.tab_separator.to_string(),
+            tab_separator_style: ws(sd.tab_separator_style),
             tab_active_index_style: sd.tab_active_index_style.map(|s| ws(s)),
             tab_active_name_style: None,
             tab_active_sync_style: None,
@@ -876,6 +884,7 @@ impl HudConfig {
         if let Some(v) = config.get("tab_separator") {
             hud.tab_separator = v.clone();
         }
+        Self::parse_widget_style(config, "tab_separator", &mut hud.tab_separator_style);
         if let Some(v) = config.get("tab_sync_indicator") {
             hud.tab_sync_indicator = v.clone();
         }
