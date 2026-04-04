@@ -38,12 +38,12 @@ plugins {
         tab_active_fg   "fg"
         tab_active_bg   "surface_bright"
         tab_active_attr ""
-        tab_active_format "{gap}{pill_left}{index}{name}{pill_right}"
+        tab_active_format "{gap}{pill_left}{index}{name}{fullscreen_indicator}{sync_indicator}{pill_right}"
 
         tab_inactive_fg   "dim"
         tab_inactive_bg   "surface"
         tab_inactive_attr ""
-        tab_inactive_format "{gap}{pill_left}{index}{name}{pill_right}"
+        tab_inactive_format "{gap}{pill_left}{index}{name}{fullscreen_indicator}{sync_indicator}{pill_right}"
 
         // Two-tone tab index: badge with accent bg
         tab_active_index_fg   "bg"

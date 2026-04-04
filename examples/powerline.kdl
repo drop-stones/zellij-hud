@@ -32,12 +32,12 @@ plugins {
         tab_active_fg   "fg"
         tab_active_bg   "surface_bright"
         tab_active_attr "bold"
-        tab_active_format "{pl_right} {name} {pl_right}"
+        tab_active_format "{pl_right} {name}{fullscreen_indicator}{sync_indicator} {pl_right}"
 
         tab_inactive_fg   "dim"
         tab_inactive_bg   "surface"
         tab_inactive_attr ""
-        tab_inactive_format "{pl_right} {name} {pl_right}"
+        tab_inactive_format "{pl_right} {name}{fullscreen_indicator}{sync_indicator} {pl_right}"
 
         // === CWD widget ===
         cwd_fg   "cyan"
