@@ -666,19 +666,19 @@ impl HudConfig {
         let icon_colors = IconColors::from_palette(palette);
 
         let mode_accent = HashMap::from([
-            (InputMode::Normal, "green".to_string()),
+            (InputMode::Normal, "blue".to_string()),
             (InputMode::Locked, "red".to_string()),
             (InputMode::Resize, "yellow".to_string()),
-            (InputMode::Pane, "blue".to_string()),
-            (InputMode::Tab, "blue".to_string()),
-            (InputMode::Scroll, "cyan".to_string()),
+            (InputMode::Pane, "cyan".to_string()),
+            (InputMode::Tab, "green".to_string()),
+            (InputMode::Scroll, "magenta".to_string()),
             (InputMode::Search, "magenta".to_string()),
             (InputMode::EnterSearch, "magenta".to_string()),
             (InputMode::RenameTab, "yellow".to_string()),
             (InputMode::RenamePane, "yellow".to_string()),
             (InputMode::Session, "cyan".to_string()),
             (InputMode::Move, "orange".to_string()),
-            (InputMode::Prompt, "cyan".to_string()),
+            (InputMode::Prompt, "green".to_string()),
             (InputMode::Tmux, "orange".to_string()),
         ]);
 
