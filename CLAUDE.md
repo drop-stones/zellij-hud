@@ -57,11 +57,12 @@ Single WASM binary (`zellij-tile = "0.44.0"`), three roles distinguished by `Rol
 - `print_text(text)` for theme-colored output with `Text::new().opaque()`
 - `Color` enum (`None`, `Rgb`, `EightBit`) with `.fg()` and `.bg()` methods for ANSI escapes
 - Composable widget architecture: all widgets (built-in and user-defined) render through the same uniform pipeline
-- Style presets (`style "minimal"` / `style "powerline"`) control format strings and default text widgets — no rendering branches
+- Style presets (`style "simple"` / `"minimal"` / `"powerline"` / `"bubble"`) control format strings and default text widgets — no rendering branches
 - Separators are regular text widgets composed in format strings, not special-cased rendering logic
 - Two-pass rendering pipeline (`src/spans.rs`): Pass 1 flattens format strings into `Vec<Span>` IR, Pass 2 resolves positional color refs and emits ANSI
 - Positional color refs: `prev_bg` / `next_bg` as special color values — forward pass resolves `prev_bg`, backward pass resolves `next_bg`, `bar_bg` as fallback
 - Tabs emit zero-width bar_bg anchor spans so positional refs resolve correctly at tab entry/exit boundaries
+- `format_center` uses absolute centering: left_gap/right_gap computed to place center content at exact midpoint of the bar
 
 ### Tab following
 
@@ -86,13 +87,13 @@ Single WASM binary (`zellij-tile = "0.44.0"`), three roles distinguished by `Rol
 
 ## Configuration Spec
 
-Design goals: composable widget architecture with zero rendering branches. All visual differences between styles (minimal, powerline) are expressed purely through config (format strings + widget definitions). No implicit behavior in the render path.
+Design goals: composable widget architecture with zero rendering branches. All visual differences between styles (simple, minimal, powerline, bubble) are expressed purely through config (format strings + widget definitions). No implicit behavior in the render path.
 
 ### Global
 
 ```kdl
 theme "system"              // "system" (default) | "tokyonight" | "catppuccin-mocha" | "nord" | "gruvbox-dark"
-style "minimal"             // "minimal" (default) | "powerline" — preset for format strings, widget styles, and separator widgets
+style "simple"              // "simple" (default) | "minimal" | "powerline" | "bubble"
 enable_status_bar "true"
 enable_tooltip "true"
 ```
@@ -100,7 +101,8 @@ enable_tooltip "true"
 ### Layout
 
 ```kdl
-format_left "{mode}{sep}{session}{sep}{tabs}"       // minimal default
+format_left "{mode}{sep}{session}{sep}{tabs}"       // simple default
+format_center ""                                     // absolute-center section (used by minimal for centered tabs)
 format_right "{cwd}{git_branch}{sep}{memory}{sep}{time}"
 bar_bg "bg"                                          // status bar background color
 ```
@@ -108,13 +110,16 @@ bar_bg "bg"                                          // status bar background co
 - `{NAME}` tokens reference built-in or user-defined widgets
 - Widget composition: widgets can reference other widgets in their format templates (recursive, max depth 5)
 - Spaces between tokens in format strings are literal (not ignored)
+- `format_center` content is placed at the exact horizontal midpoint; left/right sections fill remaining space
 
-### Palette (10 colors, set by theme, individually overridable)
+### Palette (12 colors, set by theme, individually overridable)
 
 ```kdl
 palette_fg "#c0caf5"
 palette_bg "#1a1b26"
 palette_dim "#565f89"
+palette_surface "#24283b"          // widget background layer (bg < surface < surface_bright)
+palette_surface_bright "#292e42"   // active/highlighted widget background
 palette_red "#f7768e"
 palette_green "#9ece6a"
 palette_yellow "#e0af68"
@@ -124,7 +129,9 @@ palette_cyan "#7dcfff"
 palette_orange "#ff9e64"
 ```
 
-Color values: palette name (`"blue"`, `"dim"`), hex (`"#7aa2f7"`), 8-bit (`"8bit:123"`), `"accent"` (mode-dependent), `"prev_bg"` (bg of preceding rendered text), or `"next_bg"` (bg of following rendered text).
+Color values: palette name (`"blue"`, `"dim"`, `"surface"`, `"surface_bright"`), hex (`"#7aa2f7"`), 8-bit (`"8bit:123"`), `"accent"` (mode-dependent), `"prev_bg"` (bg of preceding rendered text), or `"next_bg"` (bg of following rendered text).
+
+System theme: surface colors auto-computed from bg via `lighten_color` helper (+10 for surface, +20 for surface_bright).
 
 ### Mode accent color
 
@@ -162,12 +169,12 @@ All widgets share these style keys (3 keys per widget):
 #### mode
 
 ```kdl
-mode_fg "accent"           // minimal default
+mode_fg "accent"           // simple default
 mode_bg ""
 mode_attr "bold"
 mode_format " {content} "  // template with {content} placeholder
 
-// Per-mode display text (new keys; old mode_normal etc. accepted as fallback)
+// Per-mode display text
 mode_content_normal "󰍀 NORMAL"
 mode_content_locked "󰌾 LOCKED"
 mode_content_pane "󰘖 PANE"
@@ -183,6 +190,8 @@ mode_content_session "󱂬 SESSION"
 mode_content_prompt "󰘥 PROMPT"
 mode_content_tmux "󰰣 TMUX"
 ```
+
+Style presets can override mode_content (e.g., minimal uses lowercase: `"󰍀 normal"`).
 
 #### session
 
@@ -207,11 +216,42 @@ tab_active_format " {name}"      // overrides tab_format for active tabs
 tab_inactive_format " {name}"    // overrides tab_format for inactive tabs
 tab_sync_indicator "🔗"
 tab_fullscreen_indicator "⛶"
+
+// Inter-tab separator (rendered between consecutive tabs)
+tab_separator ""                   // e.g., " • " for minimal style
+tab_separator_fg "dim"
+tab_separator_bg ""
+tab_separator_attr ""
 ```
 
 Placeholders: `{name}`, `{index}`, `{sync_indicator}`, `{fullscreen_indicator}`, plus `{WIDGET_NAME}` refs.
 
-Tab formats support widget references for powerline arrows (e.g., `"{ta_in} {name} {ta_out}"`).
+Tab formats support widget references for powerline arrows (e.g., `"{pl_right} {name} {pl_right}"`).
+
+##### Tab sub-placeholder styles and formats
+
+Each tab sub-placeholder (index, name, sync, fullscreen) can have its own style override and format template. If no style override is set, the parent tab style is used.
+
+```kdl
+// Index sub-placeholder (active/inactive)
+tab_active_index_fg "bg"
+tab_active_index_bg "blue"
+tab_active_index_attr "bold"
+tab_active_index_format "{content} "    // format template wrapping the index value
+
+tab_inactive_index_fg "bg"
+tab_inactive_index_bg "dim"
+tab_inactive_index_attr ""
+tab_inactive_index_format "{content} "
+
+// Name sub-placeholder (active/inactive)
+tab_active_name_format " {content}"     // format template wrapping the tab name
+tab_inactive_name_format " {content}"
+
+// Sync/fullscreen sub-placeholder styles
+tab_active_sync_fg "..."
+tab_active_fullscreen_fg "..."
+```
 
 #### cwd
 
@@ -254,8 +294,10 @@ NAME_format "{content}"     // template with {content} placeholder
 Legacy `text_NAME_*` prefix also accepted for backward compat.
 
 **Preset text widgets** (defined by style preset, overridable):
-- minimal: `sep` (thin `|` divider)
-- powerline: `s_ms`, `s_sb`, `s_cg`, `s_gm`, `s_mt` (segment separators), `ta_in`, `ta_out`, `ti_in`, `ti_out` (tab arrows)
+- simple: `sep` (thin `|` divider)
+- powerline: `pl_right`, `pl_left`, `pl_thin` (arrow separators), `ta_in`, `ta_out`, `ti_in`, `ti_out` (tab arrows)
+- bubble: `pill_left`, `pill_right` (rounded pill edges), `gap` (bar-bg spacer), `sess_icon`, `cwd_icon`, `git_icon`, `mem_icon`, `time_icon`, `date_icon` (two-tone icon badges)
+- minimal: (no default text widgets)
 
 #### Widget type detection
 
@@ -283,17 +325,17 @@ tooltip_border "true"
 | Category | Keys |
 |---|---|
 | Global | 4 (theme, style, enable_status_bar, enable_tooltip) |
-| Layout | 3 (format_left, format_right, bar_bg) |
-| Palette | 10 |
+| Layout | 4 (format_left, format_center, format_right, bar_bg) |
+| Palette | 12 |
 | Mode accent | 14 |
 | mode widget | 18 (3 style + 1 format + 14 content) |
 | session | 4 (3 style + 1 format) |
-| tabs | 9 (6 style + 3 format/indicator) |
+| tabs | 20 (6 style + 3 format/indicator + 3 separator + 8 sub-placeholder style/format) |
 | cwd | 4 (3 style + 1 format) |
 | command (per NAME) | 6 |
 | text (per NAME) | 5 |
 | tooltip | 10 |
-| **Total** | **~76 + 6-11/user-defined widget** |
+| **Total** | **~90 + 6-11/user-defined widget** |
 
 ### Base mode detection
 
@@ -302,22 +344,22 @@ tooltip_border "true"
 
 ### Theme presets
 
-Themes provide: palette colors + mode accent colors. Style presets provide: format strings + widget styles + default text widgets.
+Themes provide: palette colors (12 colors including surface/surface_bright) + mode accent colors. Style presets provide: format strings + widget styles + default text widgets.
 
 Available themes: system (default, uses zellij's palette), tokyonight, catppuccin-mocha, nord, gruvbox-dark.
 
-System theme: `bg` = `ribbon_unselected.base` (maps to `palette.black` in zellij).
+System theme: `bg` = `ribbon_unselected.base` (maps to `palette.black` in zellij). Surface colors auto-computed via `lighten_color`.
+
+### Style presets
+
+4 built-in styles, each defining format strings, widget styles, and default text widgets:
+
+- **simple** (default): Flat look with thin `|` separators and icons. All sections in format_left/format_right.
+- **minimal**: Dotbar style — mode left, tabs centered (`format_center`), time right. Uses `tab_separator " • "` and lowercase mode text.
+- **powerline**: Triangle arrow separators using positional color refs (`prev_bg`/`next_bg`). Tabs use `surface`/`surface_bright` backgrounds.
+- **bubble**: Rounded pill segments with two-tone icon badges (accent bg icon + muted `surface` text area). Each widget floats as an isolated pill.
 
 ## TODO
-
-### Rendering
-
-- [x] **Two-pass rendering pipeline**: Replaced single-pass ANSI string concatenation with a `Vec<Span>` IR. Pass 1 flattens widgets into spans, Pass 2 resolves positional color refs (`prev_bg`/`next_bg`) and emits ANSI. Eliminated `style_restore` mechanism and `\x1b[0m` replace hack. (`src/spans.rs`)
-- [x] **Positional color references**: `prev_bg` and `next_bg` as special color values in widget fg/bg. Forward pass resolves `prev_bg`, backward pass resolves `next_bg`, with `bar_bg` as fallback at boundaries. Tabs emit zero-width bar_bg anchor spans for correct resolution at tab boundaries.
-
-### Styles & Examples
-
-- [ ] Add 1–3 additional style presets or example configs (e.g., rounded separators, slant style, minimalist with accent borders) in `examples/`
 
 ### Tooltip
 
@@ -326,7 +368,7 @@ System theme: `bg` = `ribbon_unselected.base` (maps to `palette.black` in zellij
 ### Documentation
 
 - [ ] Update `README.md` with current configuration spec and usage examples
-- [ ] Update `../zellij-hud.wiki/` (Configuration.md, Architecture.md, etc.) to reflect composable widget architecture, two-pass rendering, and positional color refs
+- [ ] Update `../zellij-hud.wiki/` (Configuration.md, Architecture.md, etc.)
 
 ## Upstream proposals (zellij)
 
