@@ -6,6 +6,22 @@ Hidden in your base mode (zero footprint), appears as floating panes when you sw
 
 ![demo](https://raw.githubusercontent.com/wiki/drop-stones/zellij-hud/demo/demo.gif)
 
+**simple** (default)
+
+![simple](https://raw.githubusercontent.com/wiki/drop-stones/zellij-hud/screenshots/simple.png)
+
+**minimal**
+
+![minimal](https://raw.githubusercontent.com/wiki/drop-stones/zellij-hud/screenshots/minimal.png)
+
+**powerline**
+
+![powerline](https://raw.githubusercontent.com/wiki/drop-stones/zellij-hud/screenshots/powerline.png)
+
+**bubble**
+
+![bubble](https://raw.githubusercontent.com/wiki/drop-stones/zellij-hud/screenshots/bubble.png)
+
 ## Features
 
 - **Floating status bar** — session name, mode indicator, tabs, CWD, git branch, date/time, memory usage
@@ -66,15 +82,6 @@ load_plugins {
     "zellij-hud"
 }
 ```
-
-### Style presets
-
-| Style | Description |
-|---|---|
-| **simple** | Flat look with thin `\|` separators and icons (default) |
-| **minimal** | Dotbar — mode left, tabs centered with `•` separators, time right |
-| **powerline** | Triangle arrow separators with layered backgrounds |
-| **bubble** | Rounded pill segments with two-tone icon badges |
 
 See [`examples/`](examples/) for fully explicit config files for each style.
 
