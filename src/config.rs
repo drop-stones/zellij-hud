@@ -804,15 +804,33 @@ impl HudConfig {
         Self::parse_widget_style(config, "session", &mut hud.session_style);
         Self::parse_widget_style(config, "tab_active", &mut hud.tab_active_style);
         Self::parse_widget_style(config, "tab_inactive", &mut hud.tab_inactive_style);
-        // Tab sub-placeholder styles (optional, fallback to tab style)
-        hud.tab_active_index_style = Self::parse_optional_style(config, "tab_active_index");
-        hud.tab_active_name_style = Self::parse_optional_style(config, "tab_active_name");
-        hud.tab_active_sync_style = Self::parse_optional_style(config, "tab_active_sync");
-        hud.tab_active_fullscreen_style = Self::parse_optional_style(config, "tab_active_fullscreen");
-        hud.tab_inactive_index_style = Self::parse_optional_style(config, "tab_inactive_index");
-        hud.tab_inactive_name_style = Self::parse_optional_style(config, "tab_inactive_name");
-        hud.tab_inactive_sync_style = Self::parse_optional_style(config, "tab_inactive_sync");
-        hud.tab_inactive_fullscreen_style = Self::parse_optional_style(config, "tab_inactive_fullscreen");
+        // Tab sub-placeholder styles (optional, fallback to tab style).
+        // Only overwrite when user config provides at least one key,
+        // so style-preset defaults are preserved.
+        if let Some(s) = Self::parse_optional_style(config, "tab_active_index") {
+            hud.tab_active_index_style = Some(s);
+        }
+        if let Some(s) = Self::parse_optional_style(config, "tab_active_name") {
+            hud.tab_active_name_style = Some(s);
+        }
+        if let Some(s) = Self::parse_optional_style(config, "tab_active_sync") {
+            hud.tab_active_sync_style = Some(s);
+        }
+        if let Some(s) = Self::parse_optional_style(config, "tab_active_fullscreen") {
+            hud.tab_active_fullscreen_style = Some(s);
+        }
+        if let Some(s) = Self::parse_optional_style(config, "tab_inactive_index") {
+            hud.tab_inactive_index_style = Some(s);
+        }
+        if let Some(s) = Self::parse_optional_style(config, "tab_inactive_name") {
+            hud.tab_inactive_name_style = Some(s);
+        }
+        if let Some(s) = Self::parse_optional_style(config, "tab_inactive_sync") {
+            hud.tab_inactive_sync_style = Some(s);
+        }
+        if let Some(s) = Self::parse_optional_style(config, "tab_inactive_fullscreen") {
+            hud.tab_inactive_fullscreen_style = Some(s);
+        }
         // Tab sub-placeholder format overrides
         if let Some(v) = config.get("tab_active_index_format") {
             hud.tab_active_index_format = v.clone();
