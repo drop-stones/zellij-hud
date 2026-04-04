@@ -33,6 +33,12 @@ impl State {
     }
 
     pub(crate) fn format_cwd(&self) -> String {
+        // Show "~" when cwd is the user's home directory
+        if let Ok(home) = std::env::var("HOME") {
+            if self.cwd == std::path::PathBuf::from(&home) {
+                return "~".to_string();
+            }
+        }
         if let Some(name) = self.cwd.file_name() {
             name.to_string_lossy().to_string()
         } else {
