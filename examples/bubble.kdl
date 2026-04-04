@@ -25,7 +25,7 @@ plugins {
 
         // === Session widget (two-tone: icon badge + name) ===
         session_fg   "cyan"
-        session_bg   "#313244"
+        session_bg   "surface"
         session_attr ""
         session_format "{sess_icon} {name}"
 
@@ -36,12 +36,12 @@ plugins {
 
         // === Tab widgets ===
         tab_active_fg   "fg"
-        tab_active_bg   "#45475a"
+        tab_active_bg   "surface_bright"
         tab_active_attr ""
         tab_active_format "{gap}{pill_left}{index}{name}{pill_right}"
 
         tab_inactive_fg   "dim"
-        tab_inactive_bg   "#313244"
+        tab_inactive_bg   "surface"
         tab_inactive_attr ""
         tab_inactive_format "{gap}{pill_left}{index}{name}{pill_right}"
 
@@ -52,7 +52,7 @@ plugins {
         tab_active_index_format "{content} "
 
         tab_inactive_index_fg "bg"
-        tab_inactive_index_bg "#585b70"
+        tab_inactive_index_bg "dim"
         tab_inactive_index_attr ""
         tab_inactive_index_format "{content} "
 
@@ -61,7 +61,7 @@ plugins {
 
         // === CWD widget (two-tone: icon badge + path) ===
         cwd_fg   "cyan"
-        cwd_bg   "#313244"
+        cwd_bg   "surface"
         cwd_attr ""
         cwd_format "{cwd_icon} {cwd}"
 
@@ -73,7 +73,7 @@ plugins {
         // === Git branch (two-tone: icon badge + branch name) ===
         // pill_left/pill_right inside format so pill hides when not in git repo.
         git_branch_fg   "magenta"
-        git_branch_bg   "#313244"
+        git_branch_bg   "surface"
         git_branch_attr ""
         git_branch_format "{pill_left}{git_icon} {stdout}{pill_right}{gap}"
 
@@ -84,7 +84,7 @@ plugins {
 
         // === Memory (two-tone: icon badge + value) ===
         memory_fg   "green"
-        memory_bg   "#313244"
+        memory_bg   "surface"
         memory_attr ""
         memory_format "{mem_icon} {stdout}"
 
@@ -95,7 +95,7 @@ plugins {
 
         // === Time (two-tone: icon badge + value) ===
         time_fg   "blue"
-        time_bg   "#313244"
+        time_bg   "surface"
         time_attr ""
         time_format "{time_icon} {stdout}"
 
