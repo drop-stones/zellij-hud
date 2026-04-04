@@ -138,19 +138,19 @@ System theme: surface colors auto-computed from bg via `lighten_color` helper (+
 Per-mode accent color. Widgets using `"accent"` in fg/bg change color based on current mode.
 
 ```kdl
-mode_accent_normal "green"
+mode_accent_normal "blue"
 mode_accent_locked "red"
 mode_accent_resize "yellow"
-mode_accent_pane "blue"
-mode_accent_tab "blue"
-mode_accent_scroll "cyan"
+mode_accent_pane "cyan"
+mode_accent_tab "green"
+mode_accent_scroll "magenta"
 mode_accent_search "magenta"
 mode_accent_enter_search "magenta"
 mode_accent_rename_tab "yellow"
 mode_accent_rename_pane "yellow"
 mode_accent_session "cyan"
 mode_accent_move "orange"
-mode_accent_prompt "cyan"
+mode_accent_prompt "green"
 mode_accent_tmux "orange"
 ```
 
@@ -230,7 +230,7 @@ Tab formats support widget references for powerline arrows (e.g., `"{pl_right} {
 
 ##### Tab sub-placeholder styles and formats
 
-Each tab sub-placeholder (index, name, sync, fullscreen) can have its own style override and format template. If no style override is set, the parent tab style is used.
+Each tab sub-placeholder (index, name, sync, fullscreen) can have its own style override and format template. If no style override is set, the parent tab style is used. When a style override has empty fields (e.g., bg=""), those fields inherit from the parent tab style.
 
 ```kdl
 // Index sub-placeholder (active/inactive)
@@ -248,9 +248,15 @@ tab_inactive_index_format "{content} "
 tab_active_name_format " {content}"     // format template wrapping the tab name
 tab_inactive_name_format " {content}"
 
-// Sync/fullscreen sub-placeholder styles
-tab_active_sync_fg "..."
-tab_active_fullscreen_fg "..."
+// Sync indicator sub-placeholder (active/inactive)
+tab_active_sync_fg "accent"            // accent fg, bg/attr inherited from tab style
+tab_active_sync_format " {content} "
+tab_inactive_sync_format " {content} "
+
+// Fullscreen indicator sub-placeholder (active/inactive)
+tab_active_fullscreen_fg "accent"
+tab_active_fullscreen_format " {content} "
+tab_inactive_fullscreen_format " {content} "
 ```
 
 #### cwd
@@ -330,12 +336,12 @@ tooltip_border "true"
 | Mode accent | 14 |
 | mode widget | 18 (3 style + 1 format + 14 content) |
 | session | 4 (3 style + 1 format) |
-| tabs | 20 (6 style + 3 format/indicator + 3 separator + 8 sub-placeholder style/format) |
+| tabs | 47 (6 style + 5 format/indicator + 4 separator + 32 sub-placeholder style/format) |
 | cwd | 4 (3 style + 1 format) |
 | command (per NAME) | 6 |
 | text (per NAME) | 5 |
 | tooltip | 10 |
-| **Total** | **~90 + 6-11/user-defined widget** |
+| **Total** | **~117 + 6-11/user-defined widget** |
 
 ### Base mode detection
 

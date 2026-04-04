@@ -9,7 +9,7 @@ plugins {
 
         // === Global ===
         theme "tokyonight"
-        // style "minimal"  // this is the default
+        // style "simple"  // this is the default
 
         // === Layout ===
         format_left  "{mode}{sep}{session}{sep}{tabs}"
