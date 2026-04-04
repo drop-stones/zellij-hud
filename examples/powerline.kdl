@@ -2,8 +2,8 @@
 // Equivalent to `style "powerline"` but defined explicitly.
 //
 // Visual layout:
-//   Left:  [mode bg=accent][session bg=dim][tab1 tab2 ...]
-//   Right: [ cwd  git ][memory bg=dim][time bg=accent]
+//   Left:  [mode bg=accent][session bg=surface][tab1 tab2 ...]
+//   Right: [ cwd  git ][memory bg=surface][time bg=accent]
 
 plugins {
     zellij-hud location="file:~/repos/zellij/zellij-hud/target/wasm32-wasip1/release/zellij-hud.wasm" {
@@ -24,7 +24,7 @@ plugins {
 
         // === Session widget ===
         session_fg   "accent"
-        session_bg   "dim"
+        session_bg   "surface"
         session_attr ""
         session_format " 󰆍 {name} "
 
@@ -53,7 +53,7 @@ plugins {
 
         // === Memory (command widget) ===
         memory_fg   "accent"
-        memory_bg   "dim"
+        memory_bg   "surface"
         memory_attr ""
         memory_format " 󰍛 {stdout} "
 

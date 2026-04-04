@@ -126,7 +126,7 @@ impl StyleDefaults {
                 mode_style:         ("bg",     "accent",  "bold"),
                 mode_content:       &[],
                 session_format:     " 󰆍 {name} ",
-                session_style:      ("accent", "dim",     ""),
+                session_style:      ("accent", "surface",  ""),
                 tab_active_format:  "{ta_in} {name} {ta_out}",
                 tab_inactive_format: "{ti_in} {name} {ti_out}",
                 tab_separator:      "",
@@ -144,7 +144,7 @@ impl StyleDefaults {
                 git_branch_format:  "{s_cg} \u{e0a0} {stdout} ",
                 git_branch_style:   ("orange", "",        ""),
                 memory_format:      " \u{f035b} {stdout} ",
-                memory_style:       ("accent", "dim",     ""),
+                memory_style:       ("accent", "surface",  ""),
                 date_format:        " \u{f00ed} {stdout} ",
                 date_style:         ("bg",     "accent",  ""),
                 time_format:        " \u{f0954} {stdout} ",
@@ -966,13 +966,13 @@ impl HudConfig {
         };
         let default_texts: Vec<(&str, TextWidget)> = match style_name {
             "powerline" => vec![
-                // Left: mode(bg=accent) ▶ session(bg=dim) ▶ bar_bg
-                ("s_ms", tw("\u{e0b0}", "accent", "dim")),     // mode → session
-                ("s_sb", tw("\u{e0b0}", "dim",    "")),         // session → bar
-                // Right: cwd ▸ git ◂ memory(bg=dim) ◂ time(bg=accent)
-                ("s_cg", tw("\u{e0b3}", "dim",    "")),         // cwd → git (thin)
-                ("s_gm", tw("\u{e0b2}", "dim",    "")),         // git → memory
-                ("s_mt", tw("\u{e0b2}", "accent", "dim")),      // memory → time
+                // Left: mode(bg=accent) ▶ session(bg=surface) ▶ bar_bg
+                ("s_ms", tw("\u{e0b0}", "accent",  "surface")), // mode → session
+                ("s_sb", tw("\u{e0b0}", "surface", "")),        // session → bar
+                // Right: cwd ▸ git ◂ memory(bg=surface) ◂ time(bg=accent)
+                ("s_cg", tw("\u{e0b3}", "dim",     "")),        // cwd → git (thin)
+                ("s_gm", tw("\u{e0b2}", "surface", "")),        // git → memory
+                ("s_mt", tw("\u{e0b2}", "accent",  "surface")), // memory → time
                 // Tab powerline separators (entry/exit arrows)
                 ("ta_in",  tw("\u{e0b0}", "bg",             "surface_bright")),
                 ("ta_out", tw("\u{e0b0}", "surface_bright",  "bg")),
