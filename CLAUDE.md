@@ -367,6 +367,11 @@ System theme: `bg` = `ribbon_unselected.base` (maps to `palette.black` in zellij
 
 ## TODO
 
+### System theme
+
+- [ ] Improve EightBit color handling in `dim_color`/`lighten_color` (surface/surface_bright/dim collapse to same color with 8-bit palettes)
+- [ ] Consider upstream proposal: expose raw `Palette` to plugins so `Styling` reverse-mapping is unnecessary
+
 ### Tooltip
 
 - [ ] Multi-column layout (future: `tooltip_columns "auto"`)
