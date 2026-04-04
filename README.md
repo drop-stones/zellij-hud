@@ -8,16 +8,18 @@ Hidden in your base mode (zero footprint), appears as floating panes when you sw
 
 ## Features
 
-- **Floating status bar** — session name, mode indicator, tabs, CWD, date/time, memory usage
+- **Floating status bar** — session name, mode indicator, tabs, CWD, git branch, date/time, memory usage
 - **Which-key tooltip** — context-aware keybinding hints that auto-resize per mode
-- **Auto theme** — inherits colors from your zellij theme automatically
-- **Theme presets** — tokyonight, catppuccin-mocha, nord, gruvbox-dark (manual override)
-- **Fully configurable** — colors, layout format, per-mode colors, enable/disable components
+- **4 style presets** — simple, minimal, powerline, bubble — or build your own with composable widgets
+- **5 theme presets** — system (auto), tokyonight, catppuccin-mocha, nord, gruvbox-dark
+- **Tab indicators** — fullscreen and sync-panes status per tab with configurable styles
+- **Composable widgets** — define custom command or text widgets and compose them in format strings
+- **Fully configurable** — 12-color palette, per-mode accent colors, layout format strings, and 100+ config keys
 - **Base mode detection** — works with both locked-centric and normal-centric keybind setups
 
 ## Requirements
 
-- Zellij 0.43.1+
+- Zellij 0.44.0+
 - [Nerd Fonts](https://www.nerdfonts.com/) (for icons)
 
 ## Installation
@@ -49,6 +51,34 @@ On first load, zellij will prompt you to grant the following permissions:
 | RunCommands | Run `date` (timezone detection) and `free` (memory usage) |
 
 ## Configuration
+
+### Quick start
+
+```kdl
+plugins {
+    zellij-hud location="https://github.com/drop-stones/zellij-hud/releases/latest/download/zellij-hud.wasm" {
+        style "powerline"          // "simple" (default) | "minimal" | "powerline" | "bubble"
+        theme "catppuccin-mocha"   // "system" (default) | "tokyonight" | "catppuccin-mocha" | "nord" | "gruvbox-dark"
+    }
+}
+
+load_plugins {
+    "zellij-hud"
+}
+```
+
+### Style presets
+
+| Style | Description |
+|---|---|
+| **simple** | Flat look with thin `\|` separators and icons (default) |
+| **minimal** | Dotbar — mode left, tabs centered with `•` separators, time right |
+| **powerline** | Triangle arrow separators with layered backgrounds |
+| **bubble** | Rounded pill segments with two-tone icon badges |
+
+See [`examples/`](examples/) for fully explicit config files for each style.
+
+### Further reading
 
 See the [wiki](https://github.com/drop-stones/zellij-hud/wiki) for detailed documentation:
 
