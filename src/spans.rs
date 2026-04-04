@@ -266,17 +266,27 @@ impl State {
             } else {
                 String::new()
             };
-            let (idx_fmt, name_fmt) = if tab.active {
-                (&c.tab_active_index_format, &c.tab_active_name_format)
+            let (idx_fmt, name_fmt, sync_fmt, fs_fmt) = if tab.active {
+                (
+                    &c.tab_active_index_format,
+                    &c.tab_active_name_format,
+                    &c.tab_active_sync_format,
+                    &c.tab_active_fullscreen_format,
+                )
             } else {
-                (&c.tab_inactive_index_format, &c.tab_inactive_name_format)
+                (
+                    &c.tab_inactive_index_format,
+                    &c.tab_inactive_name_format,
+                    &c.tab_inactive_sync_format,
+                    &c.tab_inactive_fullscreen_format,
+                )
             };
             // (placeholder, value, format template, optional style override)
             let subs: &[(&str, &str, &str, &Option<WidgetStyle>)] = &[
                 ("index", &index_text, idx_fmt, idx_style),
                 ("name", &tab.name, name_fmt, name_style),
-                ("sync_indicator", &sync_text, "{content}", sync_style),
-                ("fullscreen_indicator", &fs_text, "{content}", fs_style),
+                ("sync_indicator", &sync_text, sync_fmt, sync_style),
+                ("fullscreen_indicator", &fs_text, fs_fmt, fs_style),
             ];
 
             // Tokenize the tab format and expand tokens
@@ -297,8 +307,17 @@ impl State {
                             subs.iter().find(|(ph, _, _, _)| *ph == name)
                         {
                             if !value.is_empty() {
+                                // Merge sub-placeholder style with parent tab style:
+                                // empty fields in the override inherit from tab_rs.
                                 let rs = match style_override {
-                                    Some(s) => self.resolve_style(s),
+                                    Some(s) => {
+                                        let resolved = self.resolve_style(s);
+                                        ResolvedStyle {
+                                            fg: if s.fg.is_empty() { tab_rs.fg.clone() } else { resolved.fg },
+                                            bg: if s.bg.is_empty() { tab_rs.bg.clone() } else { resolved.bg },
+                                            attr: if s.attr.is_empty() { tab_rs.attr.clone() } else { resolved.attr },
+                                        }
+                                    }
                                     None => ResolvedStyle {
                                         fg: tab_rs.fg.clone(),
                                         bg: tab_rs.bg.clone(),
