@@ -57,7 +57,7 @@ Single WASM binary (`zellij-tile = "0.44.0"`), three roles distinguished by `Rol
 - `print_text(text)` for theme-colored output with `Text::new().opaque()`
 - `Color` enum (`None`, `Rgb`, `EightBit`) with `.fg()` and `.bg()` methods for ANSI escapes
 - Composable widget architecture: all widgets (built-in and user-defined) render through the same uniform pipeline
-- Style presets (`style "simple"` / `"minimal"` / `"powerline"` / `"bubble"`) control format strings and default text widgets — no rendering branches
+- Style presets (`style "simple"` / `"minimal"` / `"powerline"` / `"bubble"` / `"custom"`) control format strings and default text widgets — no rendering branches
 - Separators are regular text widgets composed in format strings, not special-cased rendering logic
 - Two-pass rendering pipeline (`src/spans.rs`): Pass 1 flattens format strings into `Vec<Span>` IR, Pass 2 resolves positional color refs and emits ANSI
 - Positional color refs: `prev_bg` / `next_bg` as special color values — forward pass resolves `prev_bg`, backward pass resolves `next_bg`, `bar_bg` as fallback
@@ -93,7 +93,7 @@ Design goals: composable widget architecture with zero rendering branches. All v
 
 ```kdl
 theme "system"              // "system" (default) | "tokyonight" | "catppuccin-mocha" | "nord" | "gruvbox-dark"
-style "simple"              // "simple" (default) | "minimal" | "powerline" | "bubble"
+style "simple"              // "simple" (default) | "minimal" | "powerline" | "bubble" | "custom"
 enable_status_bar "true"
 enable_tooltip "true"
 ```
@@ -218,7 +218,7 @@ tab_sync_indicator "🔗"
 tab_fullscreen_indicator "⛶"
 
 // Inter-tab separator (rendered between consecutive tabs)
-tab_separator ""                   // e.g., " • " for minimal style
+tab_separator_content ""           // e.g., " • " for minimal style
 tab_separator_fg "dim"
 tab_separator_bg ""
 tab_separator_attr ""
@@ -251,11 +251,17 @@ tab_inactive_name_format " {content}"
 // Sync indicator sub-placeholder (active/inactive)
 tab_active_sync_fg "accent"            // accent fg, bg/attr inherited from tab style
 tab_active_sync_format " {content} "
+tab_inactive_sync_fg ""
+tab_inactive_sync_bg ""
+tab_inactive_sync_attr ""
 tab_inactive_sync_format " {content} "
 
 // Fullscreen indicator sub-placeholder (active/inactive)
 tab_active_fullscreen_fg "accent"
 tab_active_fullscreen_format " {content} "
+tab_inactive_fullscreen_fg ""
+tab_inactive_fullscreen_bg ""
+tab_inactive_fullscreen_attr ""
 tab_inactive_fullscreen_format " {content} "
 ```
 
@@ -283,9 +289,8 @@ NAME_interval "10"          // execution interval in seconds
 
 Hidden when command fails (exit_code != 0) or stdout is empty.
 
-Legacy `command_NAME_*` prefix also accepted for backward compat.
 
-**Preset command widgets** (overridable): `time`, `date`, `memory`, `git_branch`
+**Built-in command widgets** (always available, overridable): `time`, `date`, `memory`, `git_branch`. Style presets may override their style/format.
 
 #### text widget (static text)
 
@@ -297,7 +302,6 @@ NAME_attr ""
 NAME_format "{content}"     // template with {content} placeholder
 ```
 
-Legacy `text_NAME_*` prefix also accepted for backward compat.
 
 **Preset text widgets** (defined by style preset, overridable):
 - simple: `sep` (thin `|` divider)
@@ -346,7 +350,7 @@ tooltip_border "true"
 ### Base mode detection
 
 - Auto-detect from keybindings: count `SwitchToMode` transitions, the most frequent target is the home mode
-- `base_mode "locked"` / `base_mode "normal"` for explicit override
+- No config key — detection is always automatic
 
 ### Theme presets
 
@@ -361,9 +365,10 @@ System theme: `bg` = `ribbon_unselected.base` (maps to `palette.black` in zellij
 4 built-in styles, each defining format strings, widget styles, and default text widgets:
 
 - **simple** (default): Flat look with thin `|` separators and icons. All sections in format_left/format_right.
-- **minimal**: Dotbar style — mode left, tabs centered (`format_center`), time right. Uses `tab_separator " • "` and lowercase mode text.
+- **minimal**: Dotbar style — mode left, tabs centered (`format_center`), time right. Uses `tab_separator_content " • "` and lowercase mode text.
 - **powerline**: Triangle arrow separators using positional color refs (`prev_bg`/`next_bg`). Tabs use `surface`/`surface_bright` backgrounds.
 - **bubble**: Rounded pill segments with two-tone icon badges (accent bg icon + muted `surface` text area). Each widget floats as an isolated pill.
+- **custom**: Blank slate — empty format strings, no decorative text widgets. Only built-in widgets available. For building layouts from scratch.
 
 ## TODO
 
