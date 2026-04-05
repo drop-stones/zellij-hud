@@ -158,16 +158,10 @@ impl State {
                 self.flatten_format_with_style(&content, &rs, out, depth);
             }
             _ => {
-                // Strip legacy prefixes
-                let bare = name
-                    .strip_prefix("command_")
-                    .or_else(|| name.strip_prefix("text_"))
-                    .unwrap_or(name);
-
-                if self.hud_config.command_widgets.contains_key(bare) {
-                    self.flatten_command_widget(bare, out, depth);
-                } else if self.hud_config.text_widgets.contains_key(bare) {
-                    self.flatten_text_widget(bare, out, depth);
+                if self.hud_config.command_widgets.contains_key(name) {
+                    self.flatten_command_widget(name, out, depth);
+                } else if self.hud_config.text_widgets.contains_key(name) {
+                    self.flatten_text_widget(name, out, depth);
                 }
             }
         }
@@ -219,10 +213,10 @@ impl State {
             out.push(anchor());
 
             // Inter-tab separator with configurable style
-            if i > 0 && !c.tab_separator.is_empty() {
+            if i > 0 && !c.tab_separator_content.is_empty() {
                 let sep_rs = self.resolve_style(&c.tab_separator_style);
                 out.push(Span {
-                    text: c.tab_separator.clone(),
+                    text: c.tab_separator_content.clone(),
                     fg: sep_rs.fg,
                     bg: sep_rs.bg,
                     attr: sep_rs.attr,

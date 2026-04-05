@@ -84,7 +84,7 @@ struct StyleDefaults {
     session_style: WStyle,
     tab_active_format: &'static str,
     tab_inactive_format: &'static str,
-    tab_separator: &'static str,
+    tab_separator_content: &'static str,
     tab_separator_style: WStyle,
     tab_active_style: WStyle,
     tab_inactive_style: WStyle,
@@ -102,14 +102,9 @@ struct StyleDefaults {
     tab_inactive_fullscreen_format: &'static str,
     cwd_format: &'static str,
     cwd_style: WStyle,
-    date_format: &'static str,
-    date_style: WStyle,
-    time_format: &'static str,
-    time_style: WStyle,
-    memory_format: &'static str,
-    memory_style: WStyle,
-    git_branch_format: &'static str,
-    git_branch_style: WStyle,
+    /// Per-built-in-command-widget style/format overrides.
+    /// These override the fixed defaults when a style preset needs a different look.
+    command_overrides: &'static [(&'static str, WStyle, &'static str)],
 }
 
 impl StyleDefaults {
@@ -135,7 +130,7 @@ impl StyleDefaults {
                 session_style:      ("accent", "surface",  ""),
                 tab_active_format:  "{ta_in} {name}{fullscreen_indicator}{sync_indicator} {ta_out}",
                 tab_inactive_format: "{ti_in} {name}{fullscreen_indicator}{sync_indicator} {ti_out}",
-                tab_separator:      "",
+                tab_separator_content:      "",
                 tab_separator_style: ("dim",   "",  ""),
                 tab_active_style:   ("fg",     "surface_bright", "bold"),
                 tab_inactive_style: ("dim",    "surface", ""),
@@ -153,14 +148,12 @@ impl StyleDefaults {
                 tab_inactive_fullscreen_format: " {content}",
                 cwd_format:         " \u{f0256} {cwd} ",
                 cwd_style:          ("cyan",   "",        ""),
-                git_branch_format:  "{s_cg} \u{e0a0} {stdout} ",
-                git_branch_style:   ("orange", "",        ""),
-                memory_format:      " \u{f035b} {stdout} ",
-                memory_style:       ("accent", "surface",  ""),
-                date_format:        " \u{f00ed} {stdout} ",
-                date_style:         ("bg",     "accent",  ""),
-                time_format:        " \u{f0954} {stdout} ",
-                time_style:         ("bg",     "accent",  ""),
+                command_overrides: &[
+                    ("git_branch", ("orange", "",        ""), "{s_cg} \u{e0a0} {stdout} "),
+                    ("memory",     ("accent", "surface", ""), " \u{f035b} {stdout} "),
+                    ("date",       ("bg",     "accent",  ""), " \u{f00ed} {stdout} "),
+                    ("time",       ("bg",     "accent",  ""), " \u{f0954} {stdout} "),
+                ],
             },
             //
             // Bubble: floating pill segments with two-tone icon badges.
@@ -181,7 +174,7 @@ impl StyleDefaults {
                 session_style:      ("cyan",   "surface",      ""),
                 tab_active_format:  "{gap}{pill_left}{index}{name}{fullscreen_indicator}{sync_indicator}{pill_right}",
                 tab_inactive_format: "{gap}{pill_left}{index}{name}{fullscreen_indicator}{sync_indicator}{pill_right}",
-                tab_separator:      "",
+                tab_separator_content:      "",
                 tab_separator_style: ("dim",   "",  ""),
                 tab_active_style:   ("fg",     "surface_bright", ""),
                 tab_inactive_style: ("dim",    "surface",        ""),
@@ -199,14 +192,12 @@ impl StyleDefaults {
                 tab_inactive_fullscreen_format: " {content} ",
                 cwd_format:         "{cwd_icon} {cwd}",
                 cwd_style:          ("cyan",   "surface",      ""),
-                git_branch_format:  "{pill_left}{git_icon} {stdout}{pill_right}{gap}",
-                git_branch_style:   ("magenta","surface",      ""),
-                memory_format:      "{mem_icon} {stdout}",
-                memory_style:       ("green",  "surface",      ""),
-                date_format:        "{date_icon} {stdout}",
-                date_style:         ("magenta","surface",      ""),
-                time_format:        "{time_icon} {stdout}",
-                time_style:         ("blue",   "surface",      ""),
+                command_overrides: &[
+                    ("git_branch", ("magenta","surface",  ""), "{pill_left}{git_icon} {stdout}{pill_right}{gap}"),
+                    ("memory",     ("green",  "surface",  ""), "{mem_icon} {stdout}"),
+                    ("date",       ("magenta","surface",  ""), "{date_icon} {stdout}"),
+                    ("time",       ("blue",   "surface",  ""), "{time_icon} {stdout}"),
+                ],
             },
             //
             // Minimal: dotbar style — mode indicator left, tabs centered with
@@ -242,7 +233,7 @@ impl StyleDefaults {
                 session_style:      ("dim",    "",        ""),
                 tab_active_format:  "{name}{fullscreen_indicator}{sync_indicator}",
                 tab_inactive_format: "{name}{fullscreen_indicator}{sync_indicator}",
-                tab_separator:      " \u{2022} ",
+                tab_separator_content:      " \u{2022} ",
                 tab_separator_style: ("dim",   "",  ""),
                 tab_active_style:   ("fg",     "",  "bold"),
                 tab_inactive_style: ("dim",    "",  ""),
@@ -260,14 +251,44 @@ impl StyleDefaults {
                 tab_inactive_fullscreen_format: " {content}",
                 cwd_format:         " \u{f0256} {cwd} ",
                 cwd_style:          ("cyan",   "",  ""),
-                git_branch_format:  " \u{e0a0} {stdout} ",
-                git_branch_style:   ("orange", "",  ""),
-                memory_format:      " \u{f035b} {stdout} ",
-                memory_style:       ("green",  "",  ""),
-                date_format:        " \u{f00ed} {stdout} ",
-                date_style:         ("magenta","",  ""),
-                time_format:        " {stdout} ",
-                time_style:         ("dim",    "",  ""),
+                command_overrides: &[
+                    ("time", ("dim", "", ""), " {stdout} "),
+                ],
+            },
+            // "custom": blank slate — empty format strings, no text widgets,
+            // only built-in widgets (mode, session, tabs, cwd) and
+            // built-in command widgets (time, date, memory, git_branch).
+            "custom" => Self {
+                format_left:   "",
+                format_center: "",
+                format_right:  "",
+                bar_bg: "bg",
+                mode_format:        " {content} ",
+                mode_style:         ("accent", "",  "bold"),
+                mode_content:       &[],
+                session_format:     " {name} ",
+                session_style:      ("cyan",   "",  ""),
+                tab_active_format:  " {name}{fullscreen_indicator}{sync_indicator}",
+                tab_inactive_format: " {name}{fullscreen_indicator}{sync_indicator}",
+                tab_separator_content:      "",
+                tab_separator_style: ("dim",   "",  ""),
+                tab_active_style:   ("fg",     "",  "bold"),
+                tab_inactive_style: ("dim",    "",  ""),
+                tab_active_index_style: None,
+                tab_active_index_format: "{content}",
+                tab_active_name_format: "{content}",
+                tab_active_sync_style: Some(("accent", "", "")),
+                tab_active_sync_format: " {content} ",
+                tab_active_fullscreen_style: Some(("accent", "", "")),
+                tab_active_fullscreen_format: " {content} ",
+                tab_inactive_index_style: None,
+                tab_inactive_index_format: "{content}",
+                tab_inactive_name_format: "{content}",
+                tab_inactive_sync_format: " {content} ",
+                tab_inactive_fullscreen_format: " {content} ",
+                cwd_format:         " {cwd} ",
+                cwd_style:          ("cyan",   "",  ""),
+                command_overrides:  &[],
             },
             // "simple" (default): flat look with thin separators and icons.
             // A single "sep" text widget is defined in build_from_palette().
@@ -285,7 +306,7 @@ impl StyleDefaults {
                 session_style:      ("cyan",   "",  ""),
                 tab_active_format:  " {name}{fullscreen_indicator}{sync_indicator}",
                 tab_inactive_format: " {name}{fullscreen_indicator}{sync_indicator}",
-                tab_separator:      "",
+                tab_separator_content:      "",
                 tab_separator_style: ("dim",   "",  ""),
                 tab_active_style:   ("fg",     "",  "bold"),
                 tab_inactive_style: ("dim",    "",  ""),
@@ -303,14 +324,9 @@ impl StyleDefaults {
                 tab_inactive_fullscreen_format: " {content} ",
                 cwd_format:         " \u{f0256} {cwd} ",
                 cwd_style:          ("cyan",   "",  ""),
-                git_branch_format:  "{sep} \u{e0a0} {stdout} ",
-                git_branch_style:   ("orange", "",  ""),
-                memory_format:      " \u{f035b} {stdout} ",
-                memory_style:       ("green",  "",  ""),
-                date_format:        " \u{f00ed} {stdout} ",
-                date_style:         ("magenta","",  ""),
-                time_format:        " \u{f0954} {stdout} ",
-                time_style:         ("blue",   "",  ""),
+                command_overrides: &[
+                    ("git_branch", ("orange",  "", ""), "{sep} \u{e0a0} {stdout} "),
+                ],
             },
         }
     }
@@ -623,7 +639,7 @@ pub(crate) struct HudConfig {
     /// Fullscreen indicator text (shown conditionally).
     pub(crate) tab_fullscreen_indicator: String,
     /// Separator text inserted between adjacent tabs. Default: empty string.
-    pub(crate) tab_separator: String,
+    pub(crate) tab_separator_content: String,
     /// Tab separator style.
     pub(crate) tab_separator_style: WidgetStyle,
     /// Optional per-placeholder styles within tab formats.
@@ -764,7 +780,7 @@ impl HudConfig {
             tab_inactive_format: sd.tab_inactive_format.to_string(),
             tab_sync_indicator: "🔗".to_string(),
             tab_fullscreen_indicator: "⛶".to_string(),
-            tab_separator: sd.tab_separator.to_string(),
+            tab_separator_content: sd.tab_separator_content.to_string(),
             tab_separator_style: ws(sd.tab_separator_style),
             tab_active_index_style: sd.tab_active_index_style.map(|s| ws(s)),
             tab_active_name_style: None,
@@ -949,8 +965,8 @@ impl HudConfig {
         if let Some(v) = config.get("tab_inactive_format") {
             hud.tab_inactive_format = v.clone();
         }
-        if let Some(v) = config.get("tab_separator") {
-            hud.tab_separator = v.clone();
+        if let Some(v) = config.get("tab_separator_content") {
+            hud.tab_separator_content = v.clone();
         }
         Self::parse_widget_style(config, "tab_separator", &mut hud.tab_separator_style);
         if let Some(v) = config.get("tab_sync_indicator") {
@@ -967,36 +983,43 @@ impl HudConfig {
         hud.command_widgets = user_commands;
         hud.text_widgets = user_texts;
 
-        // Default command widgets (can be overridden by user config).
-        // Short names work as format placeholders: {time}, {memory}, {git_branch}.
-        let defaults: Vec<(&str, CommandWidget)> = vec![
+        // Built-in command widgets with fixed defaults.
+        // Style presets may override style/format via command_overrides.
+        let builtin_commands: Vec<(&str, CommandWidget)> = vec![
             ("time", CommandWidget {
                 command: "date +%H:%M".to_string(),
-                style: ws(sd.time_style),
-                format: sd.time_format.to_string(),
+                style: WidgetStyle::new("blue", "", ""),
+                format: " \u{f0954} {stdout} ".to_string(),
                 interval: 1,
             }),
             ("date", CommandWidget {
                 command: "date +\"%b %d\"".to_string(),
-                style: ws(sd.date_style),
-                format: sd.date_format.to_string(),
+                style: WidgetStyle::new("magenta", "", ""),
+                format: " \u{f00ed} {stdout} ".to_string(),
                 interval: 60,
             }),
             ("memory", CommandWidget {
                 command: "free | awk '/Mem:/{printf \"%.0f%%\", $3/$2*100}'".to_string(),
-                style: ws(sd.memory_style),
-                format: sd.memory_format.to_string(),
+                style: WidgetStyle::new("green", "", ""),
+                format: " \u{f035b} {stdout} ".to_string(),
                 interval: 5,
             }),
             ("git_branch", CommandWidget {
                 command: "git rev-parse --abbrev-ref HEAD 2>/dev/null".to_string(),
-                style: ws(sd.git_branch_style),
-                format: sd.git_branch_format.to_string(),
+                style: WidgetStyle::new("orange", "", ""),
+                format: " \u{e0a0} {stdout} ".to_string(),
                 interval: 10,
             }),
         ];
-        for (name, widget) in defaults {
+        for (name, widget) in builtin_commands {
             hud.command_widgets.entry(name.to_string()).or_insert(widget);
+        }
+        // Apply style preset overrides for built-in command widgets
+        for &(name, style_tuple, format) in sd.command_overrides {
+            if let Some(w) = hud.command_widgets.get_mut(name) {
+                w.style = ws(style_tuple);
+                w.format = format.to_string();
+            }
         }
         // Apply short-name style/format overrides (e.g., time_fg, git_branch_format)
         let widget_names: Vec<String> = hud.command_widgets.keys().cloned().collect();
@@ -1094,8 +1117,8 @@ impl HudConfig {
     /// Discover user-defined widgets from config keys.
     ///
     /// Detection rules:
-    /// - `NAME_command` → command widget (also accepts `command_NAME_command` for compat)
-    /// - `NAME_content` → text widget (also accepts `text_NAME_content` for compat)
+    /// - `NAME_command` → command widget
+    /// - `NAME_content` → text widget
     ///
     /// Widget names must not match any reserved prefix.
     fn parse_user_widgets(
@@ -1107,81 +1130,51 @@ impl HudConfig {
         for key in config.keys() {
             // Try NAME_command pattern
             if let Some(name) = key.strip_suffix("_command") {
-                if name.is_empty() {
+                if name.is_empty() || Self::is_reserved_name(name) {
                     continue;
                 }
-                // Handle command_NAME_command compat: extract inner name
-                let widget_name = name.strip_prefix("command_").unwrap_or(name);
-                if widget_name.is_empty() || Self::is_reserved_name(widget_name) {
-                    continue;
-                }
-                if commands.contains_key(widget_name) {
+                if commands.contains_key(name) {
                     continue;
                 }
                 let command = config.get(key).cloned().unwrap_or_default();
                 let mut style = WidgetStyle::default();
-                // Try new-style keys (NAME_fg) first, then old-style (command_NAME_fg)
-                Self::parse_widget_style(config, widget_name, &mut style);
-                if widget_name != name {
-                    // Also check old-style prefixed keys as fallback
-                    let mut old_style = WidgetStyle::default();
-                    Self::parse_widget_style(config, name, &mut old_style);
-                    if style.fg.is_empty() { style.fg = old_style.fg; }
-                    if style.bg.is_empty() { style.bg = old_style.bg; }
-                    if style.attr.is_empty() { style.attr = old_style.attr; }
-                }
+                Self::parse_widget_style(config, name, &mut style);
                 let format = config
-                    .get(&format!("{}_format", widget_name))
-                    .or_else(|| config.get(&format!("{}_format", name)))
+                    .get(&format!("{name}_format"))
                     .cloned()
                     .unwrap_or_else(|| "{stdout}".to_string());
                 let interval = config
-                    .get(&format!("{}_interval", widget_name))
-                    .or_else(|| config.get(&format!("{}_interval", name)))
+                    .get(&format!("{name}_interval"))
                     .and_then(|v| v.parse().ok())
                     .unwrap_or(10);
 
                 commands.insert(
-                    widget_name.to_string(),
+                    name.to_string(),
                     CommandWidget { command, style, format, interval },
                 );
             }
 
             // Try NAME_content pattern (skip if it matches mode_content_* which is per-mode content)
             if let Some(name) = key.strip_suffix("_content") {
-                if name.is_empty() {
+                if name.is_empty() || name.starts_with("mode_content") {
                     continue;
                 }
-                // Skip mode_content_MODE keys (handled separately for mode widget)
-                if name.starts_with("mode_content") {
+                if Self::is_reserved_name(name) {
                     continue;
                 }
-                // Handle text_NAME_content compat: extract inner name
-                let widget_name = name.strip_prefix("text_").unwrap_or(name);
-                if widget_name.is_empty() || Self::is_reserved_name(widget_name) {
-                    continue;
-                }
-                if texts.contains_key(widget_name) {
+                if texts.contains_key(name) {
                     continue;
                 }
                 let content = config.get(key).cloned().unwrap_or_default();
                 let mut style = WidgetStyle::default();
-                Self::parse_widget_style(config, widget_name, &mut style);
-                if widget_name != name {
-                    let mut old_style = WidgetStyle::default();
-                    Self::parse_widget_style(config, name, &mut old_style);
-                    if style.fg.is_empty() { style.fg = old_style.fg; }
-                    if style.bg.is_empty() { style.bg = old_style.bg; }
-                    if style.attr.is_empty() { style.attr = old_style.attr; }
-                }
+                Self::parse_widget_style(config, name, &mut style);
                 let format = config
-                    .get(&format!("{}_format", widget_name))
-                    .or_else(|| config.get(&format!("{}_format", name)))
+                    .get(&format!("{name}_format"))
                     .cloned()
                     .unwrap_or_else(|| "{content}".to_string());
 
                 texts.insert(
-                    widget_name.to_string(),
+                    name.to_string(),
                     TextWidget { content, style, format },
                 );
             }
