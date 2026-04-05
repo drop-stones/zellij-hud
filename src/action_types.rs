@@ -1,8 +1,6 @@
 use zellij_tile::prelude::actions::Action;
 use zellij_tile::prelude::*;
 
-use crate::config::IconColors;
-
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub(crate) enum ActionType {
     MoveFocus,
@@ -133,8 +131,8 @@ impl ActionType {
         }
     }
 
-    /// ANSI color escape for the icon, derived from the theme palette.
-    pub(crate) fn icon_color<'a>(&self, colors: &'a IconColors) -> &'a str {
+    /// Color for the icon, derived from the theme palette.
+    pub(crate) fn icon_color<'a>(&self, colors: &'a crate::config::IconColors) -> &'a crate::config::Color {
         match self {
             ActionType::SwitchToMode(_) => &colors.mode_switch,
             ActionType::MoveFocus | ActionType::MovePaneWithDirection => &colors.navigation,
@@ -168,23 +166,23 @@ impl ActionType {
 
     pub(crate) fn from_action(action: &Action) -> Self {
         match action {
-            Action::MoveFocus(_) => ActionType::MoveFocus,
-            Action::MovePane(Some(_)) => ActionType::MovePaneWithDirection,
-            Action::Resize(Resize::Increase, Some(_)) => ActionType::ResizeIncrease,
-            Action::Resize(Resize::Decrease, Some(_)) => ActionType::ResizeDecrease,
-            Action::Resize(_, None) => ActionType::ResizeAny,
-            Action::Search(_) => ActionType::Search,
-            Action::NewPane(Some(Direction::Down), _, _) => ActionType::NewPaneDown,
-            Action::NewPane(Some(Direction::Right), _, _) => ActionType::NewPaneRight,
-            Action::NewPane(Some(_), _, _) => ActionType::NewPaneDown, // fallback
-            Action::NewPane(None, _, _) => ActionType::NewPaneWithoutDirection,
-            Action::NewStackedPane(_, _) => ActionType::NewStackedPane,
+            Action::MoveFocus { .. } => ActionType::MoveFocus,
+            Action::MovePane { direction: Some(_) } => ActionType::MovePaneWithDirection,
+            Action::Resize { resize: Resize::Increase, direction: Some(_) } => ActionType::ResizeIncrease,
+            Action::Resize { resize: Resize::Decrease, direction: Some(_) } => ActionType::ResizeDecrease,
+            Action::Resize { direction: None, .. } => ActionType::ResizeAny,
+            Action::Search { .. } => ActionType::Search,
+            Action::NewPane { direction: Some(Direction::Down), .. } => ActionType::NewPaneDown,
+            Action::NewPane { direction: Some(Direction::Right), .. } => ActionType::NewPaneRight,
+            Action::NewPane { direction: Some(_), .. } => ActionType::NewPaneDown, // fallback
+            Action::NewPane { direction: None, .. } => ActionType::NewPaneWithoutDirection,
+            Action::NewStackedPane { .. } => ActionType::NewStackedPane,
             Action::BreakPaneLeft | Action::BreakPaneRight => ActionType::BreakPaneLeftOrRight,
             Action::GoToPreviousTab | Action::GoToNextTab => ActionType::GoToAdjacentTab,
             Action::ScrollUp | Action::ScrollDown => ActionType::Scroll,
             Action::PageScrollUp | Action::PageScrollDown => ActionType::PageScroll,
             Action::HalfPageScrollUp | Action::HalfPageScrollDown => ActionType::HalfPageScroll,
-            Action::SwitchToMode(m) => ActionType::SwitchToMode(*m),
+            Action::SwitchToMode { input_mode } => ActionType::SwitchToMode(*input_mode),
             Action::TogglePaneEmbedOrFloating => ActionType::TogglePaneEmbedOrFloating,
             Action::ToggleFocusFullscreen => ActionType::ToggleFocusFullscreen,
             Action::ToggleFloatingPanes => ActionType::ToggleFloatingPanes,
@@ -193,7 +191,7 @@ impl ActionType {
             Action::ToggleActiveSyncTab => ActionType::ToggleActiveSyncTab,
             Action::ToggleTab => ActionType::ToggleTab,
             Action::BreakPane => ActionType::BreakPane,
-            Action::EditScrollback => ActionType::EditScrollback,
+            Action::EditScrollback { .. } => ActionType::EditScrollback,
             Action::Detach => ActionType::Detach,
             Action::Quit => ActionType::Quit,
             action if action.launches_plugin("session-manager") => ActionType::SessionManager,
@@ -202,7 +200,7 @@ impl ActionType {
             action if is_any_plugin_launch(action) => {
                 ActionType::LaunchPlugin(extract_plugin_name(action))
             }
-            action if matches!(action, Action::NewTab(..)) => ActionType::NewTab,
+            action if matches!(action, Action::NewTab { .. }) => ActionType::NewTab,
             _ => ActionType::Other(format!("{:?}", action)),
         }
     }

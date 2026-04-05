@@ -1,0 +1,96 @@
+// Powerline style with arrow separators using positional color refs.
+// Equivalent to `style "powerline"` but defined explicitly.
+//
+// Visual layout:
+//   Left:  [mode bg=accent][session bg=surface][tab1 tab2 ...]
+//   Right: [ cwd  git ][memory bg=surface][time bg=accent]
+
+plugins {
+    zellij-hud location="file:~/repos/zellij/zellij-hud/target/wasm32-wasip1/release/zellij-hud.wasm" {
+
+        // === Global ===
+        theme "tokyonight"
+
+        // === Layout ===
+        format_left  "{mode}{pl_right}{session}{pl_right}{tabs}"
+        format_right "{cwd}{git_branch}{pl_left}{memory}{pl_left}{time}"
+        bar_bg "bg"
+
+        // === Mode widget ===
+        mode_fg   "bg"
+        mode_bg   "accent"
+        mode_attr "bold"
+        mode_format " {content} "
+
+        // === Session widget ===
+        session_fg   "accent"
+        session_bg   "surface"
+        session_attr ""
+        session_format " 󰆍 {name} "
+
+        // === Tab widgets ===
+        tab_active_fg   "fg"
+        tab_active_bg   "surface_bright"
+        tab_active_attr "bold"
+        tab_active_format "{pl_right} {name}{fullscreen_indicator}{sync_indicator} {pl_right}"
+
+        tab_inactive_fg   "dim"
+        tab_inactive_bg   "surface"
+        tab_inactive_attr ""
+        tab_inactive_format "{pl_right} {name}{fullscreen_indicator}{sync_indicator} {pl_right}"
+
+        // === CWD widget ===
+        cwd_fg   "cyan"
+        cwd_bg   ""
+        cwd_attr ""
+        cwd_format " 󰉖 {cwd} "
+
+        // === Git branch (command widget) ===
+        git_branch_fg   "orange"
+        git_branch_bg   ""
+        git_branch_attr ""
+        git_branch_format "{pl_thin}  {stdout} "
+
+        // === Memory (command widget) ===
+        memory_fg   "accent"
+        memory_bg   "surface"
+        memory_attr ""
+        memory_format " 󰍛 {stdout} "
+
+        // === Time (command widget) ===
+        time_fg   "bg"
+        time_bg   "accent"
+        time_attr ""
+        time_format " 󰥔 {stdout} "
+
+        // =====================================================
+        // Separator text widgets (3 generic, using positional refs)
+        // =====================================================
+        //
+        // prev_bg = bg color of the character just before this separator
+        // next_bg = bg color of the character just after this separator
+        //
+        //  (U+E0B0) = right-pointing triangle
+        //  (U+E0B2) = left-pointing triangle
+        //  (U+E0B3) = thin left-pointing triangle
+
+        // Right-pointing arrow: fg picks up left segment's bg, bg picks up right segment's bg
+        pl_right_content ""
+        pl_right_fg "prev_bg"
+        pl_right_bg "next_bg"
+
+        // Left-pointing arrow: fg picks up right segment's bg, bg picks up left segment's bg
+        pl_left_content ""
+        pl_left_fg "next_bg"
+        pl_left_bg "prev_bg"
+
+        // Thin divider: static dim color, no background
+        pl_thin_content ""
+        pl_thin_fg "dim"
+        pl_thin_bg ""
+    }
+}
+
+load_plugins {
+    "zellij-hud"
+}

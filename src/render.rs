@@ -1,8 +1,11 @@
-use zellij_tile::prelude::InputMode;
+use unicode_width::UnicodeWidthChar;
 
+use crate::config::Color;
+use crate::spans::resolve_and_emit;
 use crate::State;
 
-/// Count visible characters in a string, ignoring ANSI escape sequences.
+/// Count visible display width of a string, ignoring ANSI escape sequences
+/// and accounting for wide characters (CJK, nerd font icons, emoji).
 pub(crate) fn visible_len(s: &str) -> usize {
     let mut len = 0;
     let mut in_escape = false;
@@ -14,102 +17,28 @@ pub(crate) fn visible_len(s: &str) -> usize {
                 in_escape = false;
             }
         } else {
-            len += 1;
+            len += UnicodeWidthChar::width(ch).unwrap_or(0);
         }
     }
     len
 }
 
 impl State {
-    pub(crate) fn render_segment(&self, placeholder: &str) -> String {
-        let c = &self.hud_config;
-        let reset = "\x1b[0m";
-
-        match placeholder {
-            "{session}" => {
-                format!("{}󰆍 {}{reset}", c.color_session, self.session_name)
-            }
-            "{mode}" => {
-                format!(
-                    "{}{} {}{reset}",
-                    c.color_for_mode(self.mode),
-                    self.mode_icon(),
-                    format!("{:?}", self.mode).to_uppercase(),
-                )
-            }
-            "{tabs}" => {
-                let mut out = String::new();
-                for tab in &self.tabs {
-                    if tab.active {
-                        out.push_str(&format!("{} {} {reset}", c.color_tab_active, tab.name));
-                    } else {
-                        out.push_str(&format!(
-                            "{} {} {reset}",
-                            c.color_tab_inactive, tab.name
-                        ));
-                    }
-                }
-                out
-            }
-            "{cwd}" => {
-                format!("{}󰉖 {}{reset}", c.color_cwd, self.format_cwd())
-            }
-            "{date}" => {
-                format!("{}󰃭 {}{reset}", c.color_date, self.format_date())
-            }
-            "{time}" => {
-                format!("{}󰥔 {}{reset}", c.color_time, self.format_time())
-            }
-            "{memory}" => {
-                if self.memory_text.is_empty() {
-                    String::new()
-                } else {
-                    format!("{}󰍛 {}{reset}", c.color_memory, self.memory_text)
-                }
-            }
-            _ => String::new(),
-        }
-    }
-
-    pub(crate) fn render_format(&self, format_str: &str) -> String {
-        let c = &self.hud_config;
-        let reset = "\x1b[0m";
-        let sep = format!("{}{}{reset}", c.color_separator, c.separator);
-
-        let parts: Vec<&str> = format_str.split(" | ").collect();
-        let mut out = String::new();
-
-        for (i, part) in parts.iter().enumerate() {
-            let trimmed = part.trim();
-            out.push_str(&self.render_segment(trimmed));
-            if i < parts.len() - 1 {
-                out.push_str(&format!(" {sep} "));
-            }
-        }
-
-        out
-    }
-
-    pub(crate) fn mode_icon(&self) -> &str {
-        match self.mode {
-            InputMode::Normal => "󰍀",
-            InputMode::Locked => "󰌾",
-            InputMode::Pane => "󰘖",
-            InputMode::Tab => "󰓩",
-            InputMode::Resize => "󰩨",
-            InputMode::Move => "󰆾",
-            InputMode::Scroll => "󰠶",
-            InputMode::Session => "󱂬",
-            InputMode::Search => "󰍉",
-            InputMode::RenameTab => "󰏫",
-            InputMode::RenamePane => "󰏫",
-            InputMode::EnterSearch => "󰍉",
-            InputMode::Tmux => "󰰣",
-            InputMode::Prompt => "󰘥",
-        }
+    /// Render a format string (format_left or format_right) into an ANSI string.
+    /// Uses the 2-pass pipeline: flatten into spans, then resolve positional
+    /// color refs and emit ANSI.
+    pub(crate) fn render_format(&self, format_str: &str, bar_bg: &Color) -> String {
+        let mut spans = self.flatten_format(format_str);
+        resolve_and_emit(&mut spans, bar_bg)
     }
 
     pub(crate) fn format_cwd(&self) -> String {
+        // Show "~" when cwd is the user's home directory
+        if let Ok(home) = std::env::var("HOME") {
+            if self.cwd == std::path::PathBuf::from(&home) {
+                return "~".to_string();
+            }
+        }
         if let Some(name) = self.cwd.file_name() {
             name.to_string_lossy().to_string()
         } else {

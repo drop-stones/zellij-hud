@@ -1,0 +1,80 @@
+// Simple style with thin separators, icons, and no background segments.
+//
+// Visual layout:
+//   Left:  mode | session | tab1 tab2 ...
+//   Right: cwd | git | memory | time
+
+plugins {
+    zellij-hud location="file:~/repos/zellij/zellij-hud/target/wasm32-wasip1/release/zellij-hud.wasm" {
+
+        // === Global ===
+        theme "tokyonight"
+        // style "simple"  // this is the default
+
+        // === Layout ===
+        format_left  "{mode}{sep}{session}{sep}{tabs}"
+        format_right "{cwd}{git_branch}{sep}{memory}{sep}{time}"
+        bar_bg "bg"
+
+        // === Mode widget ===
+        mode_fg   "accent"
+        mode_bg   ""
+        mode_attr "bold"
+        mode_format " {content} "
+
+        // === Session widget ===
+        session_fg   "cyan"
+        session_bg   ""
+        session_attr ""
+        session_format " 󰆍 {name} "
+
+        // === Tab widgets ===
+        tab_active_fg   "fg"
+        tab_active_bg   ""
+        tab_active_attr "bold"
+        tab_active_format " {name}{fullscreen_indicator}{sync_indicator}"
+
+        tab_inactive_fg   "dim"
+        tab_inactive_bg   ""
+        tab_inactive_attr ""
+        tab_inactive_format " {name}{fullscreen_indicator}{sync_indicator}"
+
+        // === CWD widget ===
+        cwd_fg   "cyan"
+        cwd_bg   ""
+        cwd_attr ""
+        cwd_format " 󰉖 {cwd} "
+
+        // === Git branch (command widget) ===
+        // Leading {sep} hides the separator when not in a git repo.
+        git_branch_fg   "orange"
+        git_branch_bg   ""
+        git_branch_attr ""
+        git_branch_format "{sep}  {stdout} "
+
+        // === Memory (command widget) ===
+        memory_fg   "green"
+        memory_bg   ""
+        memory_attr ""
+        memory_format " 󰍛 {stdout} "
+
+        // === Time (command widget) ===
+        time_fg   "blue"
+        time_bg   ""
+        time_attr ""
+        time_format " 󰥔 {stdout} "
+
+        // =====================================================
+        // Separator widget
+        // =====================================================
+
+        // Thin pipe divider
+        sep_content "|"
+        sep_fg "dim"
+        sep_bg ""
+    }
+}
+
+load_plugins {
+    "zellij-hud"
+}

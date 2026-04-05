@@ -1,19 +1,33 @@
 mod action_types;
 mod commands;
 mod config;
-mod datetime;
 mod keybinds;
 pub(crate) mod render;
+mod spans;
 mod spawn;
 mod tooltip;
 
 use zellij_tile::prelude::*;
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::path::PathBuf;
 
-use commands::{CMD_CONTEXT_MEM, CMD_CONTEXT_TZ, MEM_UPDATE_INTERVAL};
-use config::{BaseMode, HudConfig};
+use std::borrow::Cow;
+
+use commands::{CMD_CONTEXT_USER, CommandOutput};
+
+/// Single-quote a string for safe use in sh -c commands.
+fn shell_escape(s: &str) -> Cow<'_, str> {
+    if s.is_empty() {
+        return Cow::Borrowed("''");
+    }
+    if s.bytes().all(|b| matches!(b, b'a'..=b'z' | b'A'..=b'Z' | b'0'..=b'9' | b'_' | b'-' | b'.' | b'/')) {
+        Cow::Borrowed(s)
+    } else {
+        Cow::Owned(format!("'{}'", s.replace('\'', "'\\''")))
+    }
+}
+use config::HudConfig;
 use render::visible_len;
 
 pub(crate) const CONFIG_IS_HUD: &str = "is_hud";
@@ -72,12 +86,12 @@ pub(crate) struct State {
     pub(crate) enable_status_bar: bool,
     /// Whether the tooltip is enabled
     pub(crate) enable_tooltip: bool,
-    /// Base mode config setting (override for ModeInfo::base_mode)
-    pub(crate) base_mode_config: BaseMode,
-    /// Formatted memory usage string
-    pub(crate) memory_text: String,
-    /// Timer tick counter for throttling memory updates
-    pub(crate) timer_count: u32,
+    /// Whether initial command results have arrived (suppresses flicker).
+    pub(crate) render_ready: bool,
+    /// Output from user-defined command widgets, keyed by widget name.
+    pub(crate) command_outputs: HashMap<String, CommandOutput>,
+    /// Per-command timer counters for interval tracking.
+    pub(crate) command_timers: HashMap<String, u32>,
     /// This instance's client ID (from get_plugin_ids).
     pub(crate) own_client_id: u16,
     /// The client ID that spawned this HUD/Tooltip instance.
@@ -108,9 +122,9 @@ impl Default for State {
             hud_config: HudConfig::default(),
             enable_status_bar: true,
             enable_tooltip: true,
-            base_mode_config: BaseMode::Auto,
-            memory_text: String::new(),
-            timer_count: 0,
+            render_ready: false,
+            command_outputs: HashMap::new(),
+            command_timers: HashMap::new(),
         }
     }
 }
@@ -118,20 +132,61 @@ impl Default for State {
 impl State {
     /// Resolve the base mode from ModeInfo or config override.
     fn resolve_base_mode(&self) -> InputMode {
-        // Explicit config override takes priority
-        let config_base = match self.role {
-            Role::Daemon => self.base_mode_config,
-            Role::Hud | Role::Tooltip => self.hud_config.base_mode,
-        };
-        match config_base {
-            BaseMode::Locked => InputMode::Locked,
-            BaseMode::Normal => InputMode::Normal,
-            BaseMode::Auto => self
-                .mode_info
-                .as_ref()
-                .and_then(|mi| mi.base_mode)
-                .unwrap_or(InputMode::Normal),
+        self.mode_info
+            .as_ref()
+            .and_then(|mi| mi.base_mode)
+            .unwrap_or(InputMode::Normal)
+    }
+
+    /// Update cwd from the currently focused terminal pane.
+    fn update_cwd_from_focused_pane(&mut self) {
+        if let Ok((_tab_idx, pane_id)) = get_focused_pane_info() {
+            if let PaneId::Terminal(_) = pane_id {
+                if let Ok(new_cwd) = get_pane_cwd(pane_id) {
+                    self.cwd = new_cwd;
+                }
+            }
         }
+    }
+
+    /// Run all user-defined command widgets immediately.
+    fn run_all_command_widgets(&self) {
+        for (name, widget) in &self.hud_config.command_widgets {
+            self.run_command_widget(name, &widget.command);
+        }
+    }
+
+    /// Tick per-command interval counters. Run commands whose interval has elapsed.
+    fn tick_command_widgets(&mut self) {
+        let names_and_cmds: Vec<(String, String, u32)> = self
+            .hud_config
+            .command_widgets
+            .iter()
+            .filter(|(_, w)| w.interval > 0)
+            .map(|(name, w)| (name.clone(), w.command.clone(), w.interval))
+            .collect();
+
+        for (name, command, interval) in names_and_cmds {
+            let counter = self.command_timers.entry(name.clone()).or_insert(0);
+            *counter += 1;
+            if *counter >= interval {
+                *counter = 0;
+                self.run_command_widget(&name, &command);
+            }
+        }
+    }
+
+    /// Execute a user-defined command widget's shell command in the focused pane's cwd.
+    fn run_command_widget(&self, name: &str, command: &str) {
+        let mut ctx = BTreeMap::new();
+        ctx.insert(CMD_CONTEXT_USER.to_string(), name.to_string());
+        let cwd = self.cwd.to_string_lossy();
+        let full_cmd = if cwd.is_empty() {
+            command.to_string()
+        } else {
+            format!("cd {} && {}", shell_escape(&cwd), command)
+        };
+        run_command(&["sh", "-c", &full_cmd], ctx);
     }
 
     /// Broadcast this Daemon instance's current mode to all peers via pipe.
@@ -253,21 +308,6 @@ impl ZellijPlugin for State {
                 set_selectable(false);
                 rename_plugin_pane(ids.plugin_id, "");
 
-                // Attempt to move to initial_tab immediately in load(), before permissions
-                // and before the first render cycle. This minimises the window during which
-                // the pane is visible on the wrong tab for other clients.
-                // Only the active clone (own == spawned) should move the pane.
-                if self.own_client_id == self.spawned_for_client {
-                    if let Some(plugin_id) = self.own_plugin_id {
-                        break_panes_to_tab_with_index(
-                            &[PaneId::Plugin(plugin_id)],
-                            self.initial_tab.saturating_sub(1),
-                            false,
-                        );
-                        self.active_tab_idx = self.initial_tab;
-                    }
-                }
-
                 request_permission(&[
                     PermissionType::ReadApplicationState,
                     PermissionType::ChangeApplicationState,
@@ -293,11 +333,6 @@ impl ZellijPlugin for State {
                     configuration.get("enable_status_bar").map_or(true, |v| v != "false");
                 self.enable_tooltip =
                     configuration.get("enable_tooltip").map_or(true, |v| v != "false");
-                self.base_mode_config = match configuration.get("base_mode").map(|s| s.as_str()) {
-                    Some("locked") => BaseMode::Locked,
-                    Some("normal") => BaseMode::Normal,
-                    _ => BaseMode::Auto,
-                };
                 self.plugin_config = configuration;
 
                 request_permission(&[
@@ -306,7 +341,6 @@ impl ZellijPlugin for State {
                     PermissionType::MessageAndLaunchOtherPlugins,
                     PermissionType::RunCommands,
                 ]);
-                // Daemon no longer needs Timer (debounce removed; close is immediate).
                 subscribe(&[
                     EventType::ModeUpdate,
                     EventType::TabUpdate,
@@ -344,14 +378,13 @@ impl ZellijPlugin for State {
                     }
                     match self.role {
                         Role::Hud => {
-                            // Detect local timezone for clock display.
-                            let mut tz_ctx = BTreeMap::new();
-                            tz_ctx.insert(CMD_CONTEXT_TZ.to_string(), "1".to_string());
-                            run_command(&["date", "+%z"], tz_ctx);
-                            // Initial memory usage.
-                            let mut mem_ctx = BTreeMap::new();
-                            mem_ctx.insert(CMD_CONTEXT_MEM.to_string(), "1".to_string());
-                            run_command(&["free", "-b"], mem_ctx);
+                            // Get focused pane's cwd before running commands
+                            self.update_cwd_from_focused_pane();
+                            self.run_all_command_widgets();
+                            // If no command widgets, render immediately
+                            if self.hud_config.command_widgets.is_empty() {
+                                self.render_ready = true;
+                            }
                             // Ask all Daemons for the current mode (active and non-active clones
                             // both need this so they render the correct mode content).
                             pipe_message_to_plugin(MessageToPlugin::new("request_mode_sync"));
@@ -364,18 +397,20 @@ impl ZellijPlugin for State {
                 }
                 true
             }
-            Event::RunCommandResult(_exit_code, ref stdout, _stderr, ref context) => {
-                if context.contains_key(CMD_CONTEXT_TZ) {
-                    if let Some(offset) = commands::parse_date_tz(stdout) {
-                        // Store timezone directly on hud_config (not plugin_config) so it
-                        // doesn't affect get_or_load_plugins config-equality matching.
-                        self.hud_config.timezone_offset = offset;
-                    }
-                } else if context.contains_key(CMD_CONTEXT_MEM) {
-                    if let Some((used, total)) = commands::parse_free(stdout) {
-                        let pct = (used as f64 / total as f64) * 100.0;
-                        self.memory_text = format!("{:.0}%", pct);
-                    }
+            Event::RunCommandResult(exit_code, ref stdout, _stderr, ref context) => {
+                if let Some(name) = context.get(CMD_CONTEXT_USER) {
+                    let stdout_str = std::str::from_utf8(stdout)
+                        .unwrap_or("")
+                        .trim()
+                        .to_string();
+                    self.command_outputs.insert(
+                        name.clone(),
+                        CommandOutput {
+                            stdout: stdout_str,
+                            exit_code: exit_code.unwrap_or(-1),
+                        },
+                    );
+                    self.render_ready = true;
                 }
                 true
             }
@@ -444,11 +479,22 @@ impl ZellijPlugin for State {
                 true
             }
             Event::TabUpdate(tabs) => {
-                self.tabs = tabs;
+                let old_tabs = std::mem::replace(&mut self.tabs, tabs);
+                let mut should_render = false;
+
+                // Check if tab list changed (names, count, active state)
+                if old_tabs.len() != self.tabs.len()
+                    || old_tabs.iter().zip(self.tabs.iter()).any(|(a, b)| {
+                        a.active != b.active
+                            || a.name != b.name
+                            || a.is_sync_panes_active != b.is_sync_panes_active
+                            || a.is_fullscreen_active != b.is_fullscreen_active
+                    })
+                {
+                    should_render = true;
+                }
 
                 if self.role == Role::Hud || self.role == Role::Tooltip {
-                    // Only the clone spawned for this client (own_client_id == spawned_for_client)
-                    // moves the pane. This is known from load() time — no race condition.
                     let is_active_clone = self.own_client_id == self.spawned_for_client;
 
                     if let Some(active_tab_index) =
@@ -474,17 +520,12 @@ impl ZellijPlugin for State {
                         }
                     }
                 }
-                true
+                should_render
             }
             Event::Timer(_) => {
                 if self.role == Role::Hud {
                     set_timeout(1.0);
-                    self.timer_count += 1;
-                    if self.timer_count % MEM_UPDATE_INTERVAL == 1 {
-                        let mut ctx = BTreeMap::new();
-                        ctx.insert(CMD_CONTEXT_MEM.to_string(), "1".to_string());
-                        run_command(&["free", "-b"], ctx);
-                    }
+                    self.tick_command_widgets();
                 }
                 true
             }
@@ -542,26 +583,52 @@ impl ZellijPlugin for State {
         }
     }
 
-    fn render(&mut self, rows: usize, cols: usize) {
+    fn render(&mut self, _rows: usize, cols: usize) {
         match self.role {
             Role::Hud => {
-                let left = format!(
-                    " {}",
-                    self.render_format(&self.hud_config.format_left.clone())
-                );
-                let right = format!(
-                    "{} ",
-                    self.render_format(&self.hud_config.format_right.clone()),
-                );
+                if !self.render_ready {
+                    // Suppress rendering until first command results arrive
+                    print!("{}", " ".repeat(cols));
+                    return;
+                }
+                let c = &self.hud_config;
+                let bar_bg = c.resolve_color_with_accent(&c.bar_bg, &c.palette, self.mode);
+                let bar_bg_esc = bar_bg.bg();
+                let reset = "\x1b[0m";
+                let left = self.render_format(&self.hud_config.format_left.clone(), &bar_bg);
+                let center_fmt = self.hud_config.format_center.clone();
+                let right = self.render_format(&self.hud_config.format_right.clone(), &bar_bg);
 
-                let left_visible = visible_len(&left);
-                let right_visible = visible_len(&right);
-                let gap = cols.saturating_sub(left_visible + right_visible);
+                let center = if center_fmt.is_empty() {
+                    String::new()
+                } else {
+                    self.render_format(&center_fmt, &bar_bg)
+                };
 
-                print!("{}{}{}", left, " ".repeat(gap), right);
+                let left_visible   = visible_len(&left);
+                let center_visible = visible_len(&center);
+                let right_visible  = visible_len(&right);
+
+                // Distribute remaining space so that center sits at the absolute
+                // middle of the bar.  Guarantee left_gap + right_gap == remaining
+                // to prevent the total from exceeding cols on overflow.
+                let remaining    = cols.saturating_sub(left_visible + center_visible + right_visible);
+                let center_start = (cols.saturating_sub(center_visible)) / 2;
+                let left_gap     = center_start.saturating_sub(left_visible).min(remaining);
+                let right_gap    = remaining - left_gap;
+
+                // gap_bg: always reset before gap spaces so the last widget's
+                // background colour does not bleed into the empty space.
+                let gap_bg = format!("{reset}{bar_bg_esc}");
+
+                print!(
+                    "{bar_bg_esc}{left}{gap_bg}{lg}{center}{gap_bg}{rg}{right}{reset}",
+                    lg = " ".repeat(left_gap),
+                    rg = " ".repeat(right_gap),
+                );
             }
             Role::Tooltip => {
-                self.render_tooltip(rows, cols);
+                self.render_tooltip(_rows, cols);
             }
             Role::Daemon => {}
         }

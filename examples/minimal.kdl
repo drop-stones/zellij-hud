@@ -1,0 +1,65 @@
+// Minimal dotbar style: mode indicator on the left, tabs centered with dot
+// separators, time on the right. Near-zero visual footprint.
+// Equivalent to `style "minimal"` but defined explicitly.
+//
+// Visual layout:
+//   Left:   󰍀 normal
+//   Center: tab1 • tab2 • tab3
+//   Right:  21:00
+
+plugins {
+    zellij-hud location="file:~/repos/zellij/zellij-hud/target/wasm32-wasip1/release/zellij-hud.wasm" {
+
+        // === Global ===
+        theme "system"
+
+        // === Layout ===
+        format_left   "{mode}"
+        format_center "{tabs}"
+        format_right  "{time}"
+        bar_bg ""
+
+        // === Mode widget ===
+        mode_fg     "bg"
+        mode_bg     "accent"
+        mode_attr   ""
+        mode_format " {content} "
+        mode_content_normal       "󰍀 normal"
+        mode_content_locked       "󰌾 locked"
+        mode_content_pane         "󰘖 pane"
+        mode_content_tab          "󰓩 tab"
+        mode_content_resize       "󰩨 resize"
+        mode_content_move         "󰆾 move"
+        mode_content_scroll       "󰠶 scroll"
+        mode_content_search       "󰍉 search"
+        mode_content_enter_search "󰍉 search"
+        mode_content_rename_tab   "󰏫 rename tab"
+        mode_content_rename_pane  "󰏫 rename pane"
+        mode_content_session      "󱂬 session"
+        mode_content_prompt       "󰘥 prompt"
+        mode_content_tmux         "󰰣 tmux"
+
+        // === Tab widgets ===
+        tab_active_fg   "fg"
+        tab_active_bg   ""
+        tab_active_attr "bold"
+        tab_active_format "{name}{fullscreen_indicator}{sync_indicator}"
+
+        tab_inactive_fg   "dim"
+        tab_inactive_bg   ""
+        tab_inactive_attr ""
+        tab_inactive_format "{name}{fullscreen_indicator}{sync_indicator}"
+
+        tab_separator_content " • "
+
+        // === Time (command widget) ===
+        time_fg     "dim"
+        time_bg     ""
+        time_attr   ""
+        time_format " {stdout} "
+    }
+}
+
+load_plugins {
+    "zellij-hud"
+}
