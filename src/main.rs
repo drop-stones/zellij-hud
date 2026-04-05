@@ -381,6 +381,10 @@ impl ZellijPlugin for State {
                             // Get focused pane's cwd before running commands
                             self.update_cwd_from_focused_pane();
                             self.run_all_command_widgets();
+                            // If no command widgets, render immediately
+                            if self.hud_config.command_widgets.is_empty() {
+                                self.render_ready = true;
+                            }
                             // Ask all Daemons for the current mode (active and non-active clones
                             // both need this so they render the correct mode content).
                             pipe_message_to_plugin(MessageToPlugin::new("request_mode_sync"));

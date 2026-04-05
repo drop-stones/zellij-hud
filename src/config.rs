@@ -559,7 +559,7 @@ pub(crate) struct CommandWidget {
     pub(crate) command: String,
     /// Widget style.
     pub(crate) style: WidgetStyle,
-    /// Output format template. Placeholders: {stdout}, {stderr}, {exit_code}.
+    /// Output format template. Placeholders: {stdout}, {exit_code}.
     pub(crate) format: String,
     /// Execution interval in seconds. 0 = run once.
     pub(crate) interval: u32,

@@ -59,17 +59,23 @@ fn tokenize(format_str: &str) -> Vec<Token> {
         if ch == '{' {
             // Collect widget ref name
             let mut name = String::new();
+            let mut closed = false;
             for inner in chars.by_ref() {
                 if inner == '}' {
+                    closed = true;
                     break;
                 }
                 name.push(inner);
             }
-            if !name.is_empty() {
+            if closed && !name.is_empty() {
                 if !literal.is_empty() {
                     tokens.push(Token::Literal(std::mem::take(&mut literal)));
                 }
                 tokens.push(Token::Ref(name));
+            } else {
+                // Unclosed brace or empty ref — keep as literal text
+                literal.push('{');
+                literal.push_str(&name);
             }
         } else {
             literal.push(ch);
@@ -436,8 +442,9 @@ pub(crate) fn resolve_and_emit(spans: &mut [Span], bar_bg: &Color) -> String {
             _ => String::new(), // should not happen after resolution
         };
         let bg_esc = match &span.bg {
+            SpanColor::Concrete(Color::None) => bar_bg.bg(),
             SpanColor::Concrete(c) => c.bg(),
-            _ => String::new(),
+            _ => bar_bg.bg(),
         };
         let attr_esc = attr_escape(&span.attr);
         out.push_str(&format!(
