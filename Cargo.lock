@@ -2730,7 +2730,7 @@ dependencies = [
 
 [[package]]
 name = "zellij-hud"
-version = "0.1.2"
+version = "0.2.0"
 dependencies = [
  "unicode-width 0.2.2",
  "zellij-tile",
