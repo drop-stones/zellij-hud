@@ -64,7 +64,7 @@ On first load, zellij will prompt you to grant the following permissions:
 | ReadApplicationState | Subscribe to mode changes and tab updates |
 | ChangeApplicationState | Manage floating panes (spawn, close, resize, move across tabs) |
 | MessageAndLaunchOtherPlugins | Spawn HUD and Tooltip pane instances |
-| RunCommands | Run `date` (timezone detection) and `free` (memory usage) |
+| RunCommands | Execute command widgets (`date`, `free`, `git branch`, etc.) |
 
 ## Configuration
 
@@ -89,9 +89,11 @@ See [`examples/`](examples/) for fully explicit config files for each style.
 
 See the [wiki](https://github.com/drop-stones/zellij-hud/wiki) for detailed documentation:
 
-- [Configuration](https://github.com/drop-stones/zellij-hud/wiki/Configuration) — all settings, format placeholders, color and palette overrides
-- [Themes](https://github.com/drop-stones/zellij-hud/wiki/Themes) — theme presets and customization
-- [Architecture](https://github.com/drop-stones/zellij-hud/wiki/Architecture) — plugin internals
+- [Configuration](https://github.com/drop-stones/zellij-hud/wiki/Configuration) — global settings overview
+  - [Colors](https://github.com/drop-stones/zellij-hud/wiki/Colors) — color system ([Color Values](https://github.com/drop-stones/zellij-hud/wiki/Color-Values), [Themes](https://github.com/drop-stones/zellij-hud/wiki/Themes))
+  - [Status Bar](https://github.com/drop-stones/zellij-hud/wiki/Status-Bar) — [Styles](https://github.com/drop-stones/zellij-hud/wiki/Styles), [Widget Types](https://github.com/drop-stones/zellij-hud/wiki/Widget-Types), [Built-in Widgets](https://github.com/drop-stones/zellij-hud/wiki/Built-in-Widgets), [Custom Widgets](https://github.com/drop-stones/zellij-hud/wiki/Custom-Widgets)
+  - [Tooltip](https://github.com/drop-stones/zellij-hud/wiki/Tooltip) — which-key tooltip settings
+- [Architecture](https://github.com/drop-stones/zellij-hud/wiki/Architecture) — three-role design and permissions
 
 ## Acknowledgements
 
