@@ -451,10 +451,15 @@ impl ZellijPlugin for State {
 
                 set_selectable(false);
 
+                // Request the same 4 permissions as Daemon. All roles share the
+                // same WASM URL, so they share a single permission cache entry.
+                // Requesting different sets causes cache overwrites that drop
+                // RunCommands, forcing repeated permission dialogs.
                 request_permission(&[
                     PermissionType::ReadApplicationState,
                     PermissionType::ChangeApplicationState,
                     PermissionType::MessageAndLaunchOtherPlugins,
+                    PermissionType::RunCommands,
                 ]);
                 subscribe(&[
                     EventType::ModeUpdate,
