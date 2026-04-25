@@ -2732,6 +2732,7 @@ dependencies = [
 name = "zellij-hud"
 version = "0.2.0"
 dependencies = [
+ "serde_json",
  "unicode-width 0.2.2",
  "zellij-tile",
 ]
