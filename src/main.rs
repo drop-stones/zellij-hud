@@ -86,8 +86,6 @@ pub(crate) struct State {
     pub(crate) enable_status_bar: bool,
     /// Whether the tooltip is enabled
     pub(crate) enable_tooltip: bool,
-    /// Whether initial command results have arrived (suppresses flicker).
-    pub(crate) render_ready: bool,
     /// Output from user-defined command widgets, keyed by widget name.
     pub(crate) command_outputs: HashMap<String, CommandOutput>,
     /// Per-command timer counters for interval tracking.
@@ -99,6 +97,10 @@ pub(crate) struct State {
     /// Only the clone whose own_client_id == spawned_for_client follows tab changes
     /// and resizes, preventing multiple clones from fighting.
     pub(crate) spawned_for_client: u16,
+    /// Whether run_deferred_init() has already executed (prevents double-execution).
+    pub(crate) init_done: bool,
+    /// Set when mode changes; render() clears the pane and resizes before drawing.
+    pub(crate) tooltip_needs_resize: bool,
 }
 
 impl Default for State {
@@ -122,9 +124,10 @@ impl Default for State {
             hud_config: HudConfig::default(),
             enable_status_bar: true,
             enable_tooltip: true,
-            render_ready: false,
             command_outputs: HashMap::new(),
             command_timers: HashMap::new(),
+            init_done: false,
+            tooltip_needs_resize: false,
         }
     }
 }
@@ -189,11 +192,120 @@ impl State {
         run_command(&["sh", "-c", &full_cmd], ctx);
     }
 
+    /// One-time setup after permission is granted.
+    ///
+    /// Called from PermissionRequestResult(Granted).  Only uses
+    /// fire-and-forget APIs (no `bytes_from_stdin().unwrap()`) so it
+    /// won't panic even if the host hasn't fully applied permissions
+    /// due to a race condition.  Guarded by `init_done`.
+    ///
+    /// Tab-following (`break_panes_to_tab_with_index`) and CWD update
+    /// (`get_focused_pane_info`) are handled by TabUpdate and Timer
+    /// respectively, since their shims panic on permission denial.
+    fn run_deferred_init(&mut self) {
+        if self.init_done {
+            return;
+        }
+        self.init_done = true;
+        match self.role {
+            Role::Hud => {
+                if let Some(plugin_id) = self.own_plugin_id {
+                    rename_plugin_pane(plugin_id, "");
+                }
+            }
+            // Tooltip: title is drawn manually in the border; no pane rename needed.
+            Role::Tooltip => {}
+            Role::Daemon => {
+                hide_self();
+            }
+        }
+        match self.role {
+            Role::Hud => {
+                pipe_message_to_plugin(MessageToPlugin::new("request_mode_sync"));
+            }
+            Role::Tooltip => {
+                pipe_message_to_plugin(MessageToPlugin::new("request_mode_sync"));
+            }
+            Role::Daemon => {
+                // Start running command widgets now that permission is granted.
+                // Results are stored and forwarded to HUD via pipe/config.
+                self.run_all_command_widgets();
+            }
+        }
+    }
+
+    /// Spawn HUD/Tooltip if the Daemon is in a non-base mode and all required state
+    /// (tabs, mode_info) is available.  Returns true if any pane was spawned.
+    /// Callers are responsible for broadcasting mode_sync; this method only
+    /// sends the heavyweight mode_info_sync when new instances are created.
+    fn daemon_try_spawn(&mut self) -> bool {
+        if self.role != Role::Daemon || !self.has_permission {
+            return false;
+        }
+        // mode_info being None means no ModeUpdate has arrived yet; self.mode is
+        // stale (default Locked).  Wait until mode_info is populated.
+        if self.mode_info.is_none() || self.tabs.is_empty() {
+            return false;
+        }
+        let base = self.resolve_base_mode();
+        let mode = self.mode;
+        if mode == base {
+            return false;
+        }
+        let mut spawned = false;
+        if self.enable_status_bar && !self.hud_is_open {
+            self.spawn_hud();
+            spawned = true;
+        }
+        if !is_tooltip_hidden_mode(mode, base) && self.enable_tooltip && !self.tooltip_is_open {
+            self.spawn_tooltip(mode);
+            spawned = true;
+        }
+        if spawned {
+            self.broadcast_mode_info_sync();
+        }
+        spawned
+    }
+
     /// Broadcast this Daemon instance's current mode to all peers via pipe.
     fn broadcast_mode_sync(&self) {
         pipe_message_to_plugin(
             MessageToPlugin::new("mode_sync")
                 .with_payload(format!("{}:{:?}", self.own_client_id, self.mode)),
+        );
+    }
+
+    /// Send the full ModeInfo JSON to peers. Only needed when a new
+    /// HUD/Tooltip is spawned or when responding to `request_mode_sync`,
+    /// not on every mode change.
+    fn broadcast_mode_info_sync(&self) {
+        if let Some(mi) = &self.mode_info {
+            if let Ok(json) = serde_json::to_string(mi) {
+                pipe_message_to_plugin(
+                    MessageToPlugin::new("mode_info_sync")
+                        .with_payload(format!("{}:{}", self.own_client_id, json)),
+                );
+            }
+        }
+    }
+
+    /// Send a single command widget result to HUD instances via pipe.
+    fn broadcast_cmd_update(&self, name: &str, stdout: &str) {
+        pipe_message_to_plugin(
+            MessageToPlugin::new("cmd_update")
+                .with_payload(format!("{}:{}:{}", self.own_client_id, name, stdout)),
+        );
+    }
+
+    /// Send current CWD to HUD instances via pipe.
+    fn send_cwd_update(&self) {
+        pipe_message_to_plugin(
+            MessageToPlugin::new("cwd_update")
+                .with_payload(format!(
+                    "{}:{}",
+                    self.own_client_id,
+                    self.cwd.to_string_lossy()
+                )),
         );
     }
 
@@ -222,18 +334,23 @@ impl State {
         };
 
         let base = self.resolve_base_mode();
-        if self.mode != mode {
+        let mode_changed = self.mode != mode;
+        if mode_changed {
             self.mode = mode;
-            if self.role == Role::Tooltip && !is_tooltip_hidden_mode(mode, base) {
-                // Only the active clone resizes (uses correct display dimensions).
-                if self.own_client_id == self.spawned_for_client {
-                    self.resize_tooltip_for_mode();
-                    self.update_tooltip_title();
-                }
-            }
-            return true;
         }
-        false
+        if self.role == Role::Tooltip {
+            // If the new mode is hidden (base/rename/etc), the Daemon has already sent
+            // close_tooltip. Don't resize or render — avoids a brief "Normal" flash.
+            if is_tooltip_hidden_mode(mode, base) {
+                return false;
+            }
+            if mode_changed {
+                self.tooltip_needs_resize = true;
+            }
+            return mode_changed;
+        }
+        // HUD: always render on mode change.
+        mode_changed
     }
 }
 
@@ -305,8 +422,70 @@ impl ZellijPlugin for State {
                     .and_then(|s| s.parse().ok())
                     .unwrap_or(1);
 
+                // Seed mode and session_name from Daemon's config so
+                // the HUD/Tooltip can render immediately without waiting
+                // for permission-dependent pipe messages.
+                if let Some(mode) = configuration.get("initial_mode").and_then(|s| mode_from_str(s)) {
+                    self.mode = mode;
+                }
+                if let Some(name) = configuration.get("session_name") {
+                    self.session_name = name.clone();
+                }
+                if let Some(cwd) = configuration.get("initial_cwd").filter(|s| !s.is_empty()) {
+                    self.cwd = PathBuf::from(cwd);
+                }
+
+                // Seed command widget outputs from Daemon's latest results.
+                // This allows HUD to render a complete status bar immediately.
+                if self.role == Role::Hud {
+                    for (key, value) in &configuration {
+                        if let Some(name) = key.strip_prefix("cmd_result_") {
+                            self.command_outputs.insert(
+                                name.to_string(),
+                                CommandOutput {
+                                    stdout: value.clone(),
+                                    exit_code: 0,
+                                },
+                            );
+                        }
+                    }
+                }
+
                 set_selectable(false);
-                rename_plugin_pane(ids.plugin_id, "");
+
+                // Request the same 4 permissions as Daemon. All roles share the
+                // same WASM URL, so they share a single permission cache entry.
+                // Requesting different sets causes cache overwrites that drop
+                // RunCommands, forcing repeated permission dialogs.
+                request_permission(&[
+                    PermissionType::ReadApplicationState,
+                    PermissionType::ChangeApplicationState,
+                    PermissionType::MessageAndLaunchOtherPlugins,
+                    PermissionType::RunCommands,
+                ]);
+                subscribe(&[
+                    EventType::ModeUpdate,
+                    EventType::TabUpdate,
+                    EventType::Timer,
+                    EventType::PermissionRequestResult,
+                ]);
+
+                // Initial timer for deferred init fallback.
+                set_timeout(0.1);
+            }
+            Role::Daemon => {
+                let ids = get_plugin_ids();
+                self.own_client_id = ids.client_id;
+                self.cwd = ids.initial_cwd;
+                self.spawned_for_client = self.own_client_id;
+                self.enable_status_bar =
+                    configuration.get("enable_status_bar").map_or(true, |v| v != "false");
+                self.enable_tooltip =
+                    configuration.get("enable_tooltip").map_or(true, |v| v != "false");
+                // Parse HudConfig for command widget definitions.
+                // Daemon runs commands on behalf of HUD.
+                self.hud_config = HudConfig::from_config(&configuration);
+                self.plugin_config = configuration;
 
                 request_permission(&[
                     PermissionType::ReadApplicationState,
@@ -321,32 +500,8 @@ impl ZellijPlugin for State {
                     EventType::PermissionRequestResult,
                     EventType::RunCommandResult,
                 ]);
-
-                if self.role == Role::Hud {
-                    set_timeout(1.0);
-                }
-            }
-            Role::Daemon => {
-                self.own_client_id = get_plugin_ids().client_id;
-                self.spawned_for_client = self.own_client_id;
-                self.enable_status_bar =
-                    configuration.get("enable_status_bar").map_or(true, |v| v != "false");
-                self.enable_tooltip =
-                    configuration.get("enable_tooltip").map_or(true, |v| v != "false");
-                self.plugin_config = configuration;
-
-                request_permission(&[
-                    PermissionType::ReadApplicationState,
-                    PermissionType::ChangeApplicationState,
-                    PermissionType::MessageAndLaunchOtherPlugins,
-                    PermissionType::RunCommands,
-                ]);
-                subscribe(&[
-                    EventType::ModeUpdate,
-                    EventType::TabUpdate,
-                    EventType::PermissionRequestResult,
-                    EventType::RunCommandResult,
-                ]);
+                // Deferred init fallback (Timer doesn't require permission).
+                set_timeout(0.1);
             }
         }
     }
@@ -356,44 +511,10 @@ impl ZellijPlugin for State {
             Event::PermissionRequestResult(result) => {
                 if result == PermissionStatus::Granted {
                     self.has_permission = true;
-                    match self.role {
-                        Role::Hud | Role::Tooltip => {
-                            // Active clone: move pane to correct tab (backup for load() attempt
-                            // in case break_panes_to_tab_with_index requires permissions).
-                            if self.own_client_id == self.spawned_for_client {
-                                if let Some(plugin_id) = self.own_plugin_id {
-                                    let tab_0based = self.initial_tab.saturating_sub(1);
-                                    break_panes_to_tab_with_index(
-                                        &[PaneId::Plugin(plugin_id)],
-                                        tab_0based,
-                                        false,
-                                    );
-                                    self.active_tab_idx = self.initial_tab;
-                                }
-                            }
-                        }
-                        Role::Daemon => {
-                            hide_self();
-                        }
-                    }
-                    match self.role {
-                        Role::Hud => {
-                            // Get focused pane's cwd before running commands
-                            self.update_cwd_from_focused_pane();
-                            self.run_all_command_widgets();
-                            // If no command widgets, render immediately
-                            if self.hud_config.command_widgets.is_empty() {
-                                self.render_ready = true;
-                            }
-                            // Ask all Daemons for the current mode (active and non-active clones
-                            // both need this so they render the correct mode content).
-                            pipe_message_to_plugin(MessageToPlugin::new("request_mode_sync"));
-                        }
-                        Role::Tooltip => {
-                            pipe_message_to_plugin(MessageToPlugin::new("request_mode_sync"));
-                        }
-                        Role::Daemon => {}
-                    }
+                    self.run_deferred_init();
+                    // Race recovery: ModeUpdate may have arrived before permission
+                    // was granted and the spawn was skipped.
+                    self.daemon_try_spawn();
                 }
                 true
             }
@@ -406,16 +527,23 @@ impl ZellijPlugin for State {
                     self.command_outputs.insert(
                         name.clone(),
                         CommandOutput {
-                            stdout: stdout_str,
+                            stdout: stdout_str.clone(),
                             exit_code: exit_code.unwrap_or(-1),
                         },
                     );
-                    self.render_ready = true;
+                    // Daemon: forward result to HUD via pipe.
+                    if self.role == Role::Daemon && self.hud_is_open {
+                        self.broadcast_cmd_update(name, &stdout_str);
+                    }
                 }
-                true
+                // Only Daemon receives this (HUD no longer runs commands).
+                false
             }
             Event::ModeUpdate(mode_info) => {
                 let new_mode = mode_info.mode;
+                // Fallback: if PermissionRequestResult arrived before this
+                // ModeUpdate, init already ran.  If not, run it now.
+                let is_initial = self.mode_info.is_none() && self.has_permission;
 
                 self.session_name = mode_info.session_name.clone().unwrap_or_default();
 
@@ -431,6 +559,10 @@ impl ZellijPlugin for State {
 
                 self.mode_info = Some(mode_info);
 
+                if is_initial {
+                    self.run_deferred_init();
+                }
+
                 let base = self.resolve_base_mode();
 
                 match self.role {
@@ -439,29 +571,16 @@ impl ZellijPlugin for State {
                         // all clients see the same globally active mode.
                     }
                     Role::Tooltip => {
-                        // Same: mode driven by mode_sync; don't resize here.
+                        // Mode is driven exclusively by mode_sync pipe.
+                        // ModeUpdate only updates mode_info (done above).
+                        // Resize and render happen in handle_mode_sync_pipe
+                        // so the host can process the resize before rendering.
                     }
                     Role::Daemon => {
                         self.mode = new_mode;
                         if self.has_permission {
-                            // Broadcast own mode so HUD/Tooltip can display it correctly.
-                            self.broadcast_mode_sync();
-
-                            // Spawn/close based exclusively on this client's own mode.
-                            if new_mode != base {
-                                if self.enable_status_bar && !self.hud_is_open {
-                                    self.spawn_hud();
-                                }
-                                if is_tooltip_hidden_mode(new_mode, base) {
-                                    if self.tooltip_is_open {
-                                        self.close_tooltip_via_pipe();
-                                        self.tooltip_is_open = false;
-                                    }
-                                } else if self.enable_tooltip && !self.tooltip_is_open {
-                                    self.spawn_tooltip(new_mode);
-                                }
-                            } else {
-                                // Mode returned to base: close immediately (no debounce).
+                            if new_mode == base {
+                                // Mode returned to base: close immediately.
                                 if self.hud_is_open {
                                     self.close_hud_via_pipe();
                                     self.hud_is_open = false;
@@ -470,13 +589,21 @@ impl ZellijPlugin for State {
                                     self.close_tooltip_via_pipe();
                                     self.tooltip_is_open = false;
                                 }
+                            } else {
+                                // daemon_try_spawn handles mode_info_sync for
+                                // newly spawned instances; mode_sync is always
+                                // sent here (once) for all existing instances.
+                                self.daemon_try_spawn();
                             }
+                            self.broadcast_mode_sync();
                         }
                     }
                 }
 
                 let _ = base;
-                true
+                // Tooltip: don't render on ModeUpdate — mode and resize are
+                // driven by mode_sync pipe; host renders after processing resize.
+                self.role != Role::Tooltip
             }
             Event::TabUpdate(tabs) => {
                 let old_tabs = std::mem::replace(&mut self.tabs, tabs);
@@ -501,7 +628,12 @@ impl ZellijPlugin for State {
                         self.tabs.iter().position(|t| t.active)
                     {
                         let new_idx = active_tab_index + 1;
-                        if is_active_clone && self.active_tab_idx != new_idx {
+                        // break_panes_to_tab_with_index requires ChangeApplicationState;
+                        // skip until permission is granted to avoid host-side panic.
+                        if is_active_clone
+                            && self.has_permission
+                            && self.active_tab_idx != new_idx
+                        {
                             if let Some(id) = self.own_plugin_id {
                                 break_panes_to_tab_with_index(
                                     &[PaneId::Plugin(id)],
@@ -513,21 +645,47 @@ impl ZellijPlugin for State {
                         self.active_tab_idx = new_idx;
                     }
 
-                    if self.role == Role::Tooltip && is_active_clone {
+                    if self.role == Role::Tooltip && is_active_clone && self.has_permission {
                         let base = self.resolve_base_mode();
                         if !is_tooltip_hidden_mode(self.mode, base) {
-                            self.resize_tooltip_for_mode();
+                            self.reposition_tooltip();
                         }
                     }
                 }
+                // Daemon: tabs just arrived; if permission already granted and we're
+                // in non-base mode, this is the spawn recovery for the rare race where
+                // PermissionRequestResult fired before the first TabUpdate.
+                self.daemon_try_spawn();
                 should_render
             }
             Event::Timer(_) => {
-                if self.role == Role::Hud {
-                    set_timeout(1.0);
-                    self.tick_command_widgets();
+                // Fallback: run init if neither PermissionRequestResult
+                // nor ModeUpdate triggered it yet.
+                if self.has_permission && !self.init_done {
+                    self.run_deferred_init();
                 }
-                true
+                match self.role {
+                    Role::Hud => {
+                        // HUD no longer runs commands (Daemon handles them).
+                        // No recurring timer needed; updates arrive via pipe.
+                        false
+                    }
+                    Role::Tooltip => false,
+                    Role::Daemon => {
+                        set_timeout(1.0);
+                        if self.has_permission {
+                            // Update CWD and send to HUD if changed.
+                            let old_cwd = self.cwd.clone();
+                            self.update_cwd_from_focused_pane();
+                            if self.cwd != old_cwd && self.hud_is_open {
+                                self.send_cwd_update();
+                            }
+                            // Tick command widget intervals and run due commands.
+                            self.tick_command_widgets();
+                        }
+                        false
+                    }
+                }
             }
             _ => false,
         }
@@ -537,11 +695,85 @@ impl ZellijPlugin for State {
         let payload = message.payload.as_deref().unwrap_or("");
         match message.name.as_str() {
             "mode_sync" => self.handle_mode_sync_pipe(payload),
+            "mode_info_sync" => {
+                if self.role == Role::Daemon {
+                    return false;
+                }
+                // Parse "client_id:json" payload.
+                if let Some((id_str, json)) = payload.split_once(':') {
+                    let client_id: u16 = match id_str.parse() {
+                        Ok(id) => id,
+                        Err(_) => return false,
+                    };
+                    if client_id != self.spawned_for_client {
+                        return false;
+                    }
+                    if self.mode_info.is_none() {
+                        if let Ok(mi) = serde_json::from_str::<ModeInfo>(json) {
+                            // Apply system theme from ModeInfo styling.
+                            if self.hud_config.use_system_theme {
+                                self.hud_config.apply_system_theme(
+                                    &mi.style.colors,
+                                    &self.plugin_config,
+                                );
+                                self.hud_config.use_system_theme = false;
+                            }
+                            let mi_mode = mi.mode;
+                            self.mode_info = Some(mi);
+                            // For Tooltip: only trigger render when mode is already in sync
+                            // with mode_sync (self.mode == mi_mode). If mode_sync hasn't
+                            // arrived yet, it will trigger render (via host after resize).
+                            // This prevents a flash of stale keybindings when mode_info_sync
+                            // arrives before mode_sync.
+                            if self.role != Role::Tooltip || mi_mode == self.mode {
+                                return true;
+                            }
+                        }
+                    }
+                }
+                false
+            }
             "request_mode_sync" => {
                 // HUD/Tooltip asks for current mode on load.
                 // Each Daemon responds; HUD/Tooltip will use only their spawner's reply.
                 if self.role == Role::Daemon && self.has_permission {
                     self.broadcast_mode_sync();
+                    self.broadcast_mode_info_sync();
+                }
+                false
+            }
+            "cmd_update" => {
+                // Daemon sends "cmd_update" with payload "client_id:name:value".
+                if self.role != Role::Hud {
+                    return false;
+                }
+                let parts: Vec<&str> = payload.splitn(3, ':').collect();
+                if parts.len() == 3 {
+                    let client_id: u16 = parts[0].parse().unwrap_or(0);
+                    if client_id == self.spawned_for_client {
+                        self.command_outputs.insert(
+                            parts[1].to_string(),
+                            CommandOutput {
+                                stdout: parts[2].to_string(),
+                                exit_code: 0,
+                            },
+                        );
+                        return true;
+                    }
+                }
+                false
+            }
+            "cwd_update" => {
+                // Daemon sends "cwd_update" with payload "client_id:path".
+                if self.role != Role::Hud {
+                    return false;
+                }
+                if let Some((id_str, cwd)) = payload.split_once(':') {
+                    let client_id: u16 = id_str.parse().unwrap_or(0);
+                    if client_id == self.spawned_for_client {
+                        self.cwd = PathBuf::from(cwd);
+                        return true;
+                    }
                 }
                 false
             }
@@ -586,11 +818,6 @@ impl ZellijPlugin for State {
     fn render(&mut self, _rows: usize, cols: usize) {
         match self.role {
             Role::Hud => {
-                if !self.render_ready {
-                    // Suppress rendering until first command results arrive
-                    print!("{}", " ".repeat(cols));
-                    return;
-                }
                 let c = &self.hud_config;
                 let bar_bg = c.resolve_color_with_accent(&c.bar_bg, &c.palette, self.mode);
                 let bar_bg_esc = bar_bg.bg();
@@ -628,6 +855,19 @@ impl ZellijPlugin for State {
                 );
             }
             Role::Tooltip => {
+                // On mode change, clear the pane and resize before rendering
+                // so the user sees a blank flash instead of stale keybindings.
+                if self.tooltip_needs_resize {
+                    let is_active = self.own_client_id == self.spawned_for_client;
+                    if is_active && self.has_permission && !self.tabs.is_empty() {
+                        self.tooltip_needs_resize = false;
+                        for _ in 0.._rows {
+                            print!("{}", " ".repeat(cols));
+                        }
+                        self.resize_tooltip_for_mode();
+                        return;
+                    }
+                }
                 self.render_tooltip(_rows, cols);
             }
             Role::Daemon => {}

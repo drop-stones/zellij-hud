@@ -5,154 +5,187 @@ use crate::keybinds::{get_actions_for_mode, ModeActions};
 use crate::render::visible_len;
 use crate::State;
 
-/// Floating pane frame overhead (top + bottom border).
+/// Pane frame overhead: 1 top + 1 bottom border row.
 const FRAME_ROWS: usize = 2;
-/// Floating pane frame overhead (left + right border).
+/// Pane frame overhead: 1 left + 1 right border col.
 const FRAME_COLS: usize = 2;
 
 impl State {
     /// Render vertical which-key style tooltip.
+    /// The pane is sized to match the content — no leading/trailing blank rows needed.
     pub(crate) fn render_tooltip(&self, rows: usize, cols: usize) {
         let mode_info = match &self.mode_info {
             Some(m) => m,
-            None => return,
+            None => {
+                for _ in 0..rows {
+                    print!("{}", " ".repeat(cols));
+                }
+                return;
+            }
         };
 
         let ma = get_actions_for_mode(mode_info, self.mode);
-
         let c = &self.hud_config;
+        let border = c.tooltip_border;
+
+        // Guard: pane too small to render anything meaningful.
+        let min_rows = if border { FRAME_ROWS + 1 } else { 1 };
+        let min_cols = if border { FRAME_COLS + 1 } else { 1 };
+        if rows < min_rows || cols < min_cols {
+            for _ in 0..rows {
+                print!("{}", " ".repeat(cols));
+            }
+            return;
+        }
         let reset = "\x1b[0m";
-        let key_color = c.resolve_color_with_accent(&c.tooltip_key_color, &c.palette, self.mode).fg();
-        let sep_color = c.resolve_color_with_accent(&c.tooltip_separator_color, &c.palette, self.mode).fg();
+
+        let key_color  = c.resolve_color_with_accent(&c.tooltip_key_color,   &c.palette, self.mode).fg();
+        let sep_color  = c.resolve_color_with_accent(&c.tooltip_separator_color, &c.palette, self.mode).fg();
         let desc_color = c.resolve_color_with_accent(&c.tooltip_description_color, &c.palette, self.mode).fg();
-        let mode_color = c.resolve_color_with_accent(&c.tooltip_mode_color, &c.palette, self.mode).fg();
-        let separator = &c.tooltip_separator;
+        let mode_color = c.resolve_color_with_accent(&c.tooltip_mode_color,   &c.palette, self.mode).fg();
+        let bdr_color  = c.resolve_color_with_accent(&c.tooltip_border_color, &c.palette, self.mode).fg();
+        let separator  = c.tooltip_separator.as_str();
 
+        let inner_cols = if border { cols.saturating_sub(FRAME_COLS) } else { cols };
         let has_common = !ma.common.is_empty();
-        let main_rows = if has_common {
-            rows.saturating_sub(1)
-        } else {
-            rows
-        };
+        let inner_main = rows.saturating_sub(if border { FRAME_ROWS } else { 0 })
+                              .saturating_sub(if has_common { 1 } else { 0 });
+        let key_width  = ma.actions.iter().map(|a| a.key.len()).max().unwrap_or(0);
 
-        let key_width = ma
-            .actions
-            .iter()
-            .map(|a| a.key.len())
-            .max()
-            .unwrap_or(0);
+        // ── Top border ────────────────────────────────────────────────────────
+        if border {
+            let title_template = &c.tooltip_title;
+            let mode_name = format!("{:?}", self.mode).to_lowercase();
+            let title = if title_template.is_empty() {
+                String::new()
+            } else {
+                title_template.replace("{mode}", &mode_name)
+            };
+            let inner_w = cols.saturating_sub(2);
+            let dash_fill = if title.is_empty() {
+                "─".repeat(inner_w)
+            } else {
+                let tv = visible_len(&title);
+                let needed = tv + 3;
+                if needed >= inner_w {
+                    "─".repeat(inner_w)
+                } else {
+                    format!("─ {} {}", title, "─".repeat(inner_w - needed))
+                }
+            };
+            print!("{bdr_color}┌{dash_fill}┐{reset}");
+        }
 
+        // ── Content rows ──────────────────────────────────────────────────────
         let mut row = 0;
-        for action in ma.actions.iter().take(main_rows) {
+        for action in ma.actions.iter().take(inner_main) {
             let key_pad = key_width.saturating_sub(action.key.len());
             let icon = action.action_type.icon();
             let desc = &action.description;
-            let d_color = if action.action_type.is_mode_switch() {
-                &mode_color
-            } else {
-                &desc_color
-            };
-
-            // Mode switch icon uses per-mode accent color
+            let d_color = if action.action_type.is_mode_switch() { &mode_color } else { &desc_color };
             let icon_color = match &action.action_type {
                 ActionType::SwitchToMode(m) => {
                     c.resolve_color_with_accent("accent", &c.palette, *m).fg()
                 }
                 _ => action.action_type.icon_color(&c.icon_colors).fg(),
             };
-
-            let line = format!(
+            let content = format!(
                 " {key_color}{key}{reset}{pad} {sep_color}{separator}{reset} {icon_color}{icon}{reset} {d_color}{desc}{reset}",
                 key = action.key,
                 pad = " ".repeat(key_pad),
             );
-            let line_visible = visible_len(&line);
-            let trailing = cols.saturating_sub(line_visible);
-            print!("{line}{}", " ".repeat(trailing));
+            let cv = visible_len(&content);
+            let pad = inner_cols.saturating_sub(cv);
+            if border {
+                print!("{bdr_color}│{reset}{content}{}{bdr_color}│{reset}", " ".repeat(pad));
+            } else {
+                print!("{content}{}", " ".repeat(pad));
+            }
+            row += 1;
+        }
+        // Fill any remaining content rows (e.g. pane slightly larger than content)
+        while row < inner_main {
+            if border {
+                print!("{bdr_color}│{reset}{}{bdr_color}│{reset}", " ".repeat(inner_cols));
+            } else {
+                print!("{}", " ".repeat(cols));
+            }
             row += 1;
         }
 
-        // Fill remaining main rows
-        while row < main_rows {
-            print!("{}", " ".repeat(cols));
-            row += 1;
-        }
-
-        // Render common (back/exit) keys centered at bottom
-        if has_common && row < rows {
-            let dim = &sep_color;
-            // Collect icons and use the shared description
-            let icons: Vec<&str> =
-                ma.common.iter().map(|c| c.icon).collect();
+        // ── Common (back/exit) keys ───────────────────────────────────────────
+        if has_common {
+            let icons: Vec<&str> = ma.common.iter().map(|c| c.icon).collect();
             let desc = &ma.common[0].description;
             let content = format!(
-                "{key_color}{icons}{reset} {dim}{desc}{reset}",
+                "{key_color}{icons}{reset} {sep_color}{desc}{reset}",
                 icons = icons.join(" "),
             );
-            let content_visible = visible_len(&content);
-            let left_pad = cols.saturating_sub(content_visible) / 2;
-            let right_pad =
-                cols.saturating_sub(content_visible + left_pad);
-            print!(
-                "{}{}{}",
-                " ".repeat(left_pad),
-                content,
-                " ".repeat(right_pad),
-            );
+            let cv = visible_len(&content);
+            let lpad = inner_cols.saturating_sub(cv) / 2;
+            let rpad = inner_cols.saturating_sub(cv + lpad);
+            if border {
+                print!("{bdr_color}│{reset}{}{content}{}{bdr_color}│{reset}",
+                    " ".repeat(lpad), " ".repeat(rpad));
+            } else {
+                print!("{}{content}{}", " ".repeat(lpad), " ".repeat(rpad));
+            }
+        }
+
+        // ── Bottom border ─────────────────────────────────────────────────────
+        if border {
+            print!("{bdr_color}└{}┘{reset}", "─".repeat(cols.saturating_sub(2)));
         }
     }
 
-    /// Resize the tooltip pane to fit the current mode's keybindings.
-    pub(crate) fn resize_tooltip_for_mode(&self) {
-        let (plugin_id, mode_info) =
-            match (self.own_plugin_id, &self.mode_info) {
-                (Some(id), Some(mi)) => (id, mi),
-                _ => return,
-            };
-
+    /// Resize the tooltip pane to the current mode's content size.
+    /// Always calls the API so the host re-renders at the correct dimensions.
+    pub(crate) fn resize_tooltip_for_mode(&mut self) {
+        let (plugin_id, mode_info) = match (self.own_plugin_id, &self.mode_info) {
+            (Some(id), Some(mi)) => (id, mi),
+            _ => return,
+        };
         if self.tabs.is_empty() {
             return;
         }
-
-        let ma = get_actions_for_mode(mode_info, self.mode);
-        if ma.actions.is_empty() && ma.common.is_empty() {
+        let border = self.hud_config.tooltip_border;
+        let (height, width) = tooltip_size(mode_info, self.mode, border);
+        if height == 0 || width == 0 {
             return;
         }
-
-        let border = self.hud_config.tooltip_border;
-        let coords = tooltip_coordinates(
-            &ma,
-            &self.tabs,
+        let coords = tooltip_coordinates_at_size(
+            height, width, &self.tabs,
             self.hud_config.enable_status_bar,
             &self.hud_config.tooltip_position,
-            border,
         );
-        change_floating_panes_coordinates(vec![(
-            PaneId::Plugin(plugin_id),
-            coords,
-        )]);
+        change_floating_panes_coordinates(vec![(PaneId::Plugin(plugin_id), coords)]);
     }
 
-    /// Update the tooltip pane title to show the current mode.
-    pub(crate) fn update_tooltip_title(&self) {
-        let plugin_id = match self.own_plugin_id {
-            Some(id) => id,
-            None => return,
+    /// Reposition the tooltip at current content size (for TabUpdate / display area change).
+    pub(crate) fn reposition_tooltip(&self) {
+        let (plugin_id, mode_info) = match (self.own_plugin_id, &self.mode_info) {
+            (Some(id), Some(mi)) => (id, mi),
+            _ => return,
         };
-
-        let template = &self.hud_config.tooltip_title;
-        if template.is_empty() {
-            rename_plugin_pane(plugin_id, "");
+        if self.tabs.is_empty() {
             return;
         }
-
-        let mode_name = format!("{:?}", self.mode).to_lowercase();
-        let title = template.replace("{mode}", &mode_name);
-        rename_plugin_pane(plugin_id, &title);
+        let border = self.hud_config.tooltip_border;
+        let (height, width) = tooltip_size(mode_info, self.mode, border);
+        if height == 0 || width == 0 {
+            return;
+        }
+        let coords = tooltip_coordinates_at_size(
+            height, width, &self.tabs,
+            self.hud_config.enable_status_bar,
+            &self.hud_config.tooltip_position,
+        );
+        change_floating_panes_coordinates(vec![(PaneId::Plugin(plugin_id), coords)]);
     }
+
 }
 
-/// Calculate tooltip pane size for the initial spawn.
+/// Calculate tooltip pane size for a specific mode (content + manual border if enabled).
 pub(crate) fn tooltip_size(mode_info: &ModeInfo, mode: InputMode, border: bool) -> (usize, usize) {
     let ma = get_actions_for_mode(mode_info, mode);
     if ma.actions.is_empty() && ma.common.is_empty() {
@@ -161,53 +194,43 @@ pub(crate) fn tooltip_size(mode_info: &ModeInfo, mode: InputMode, border: bool) 
     tooltip_dimensions(&ma, border)
 }
 
-/// Compute (height, width) including frame for a ModeActions.
+/// Compute (height, width) for a ModeActions including manual border overhead.
 fn tooltip_dimensions(ma: &ModeActions, border: bool) -> (usize, usize) {
-    let key_width = ma
-        .actions
-        .iter()
-        .map(|a| a.key.len())
-        .max()
-        .unwrap_or(0);
+    let key_width = ma.actions.iter().map(|a| a.key.len()).max().unwrap_or(0);
     let desc_width = ma
         .actions
         .iter()
-        .map(|a| {
-            let icon = a.action_type.icon();
-            visible_len(icon) + 1 + a.description.len()
-        })
+        .map(|a| visible_len(a.action_type.icon()) + 1 + a.description.len())
         .max()
         .unwrap_or(0);
 
-    // " key  ➜ icon desc"
+    // " key  ➜ icon desc"  (leading space + key + 3 separators + desc)
     let main_width = 1 + key_width + 3 + desc_width;
 
-    // Common line: "icon icon desc"
     let common_width = if ma.common.is_empty() {
         0
     } else {
-        let icons_width: usize = ma.common.len(); // each icon is 1 visible char
-        let sep_width = ma.common.len().saturating_sub(1); // spaces between icons
-        let desc_len = ma.common[0].description.len();
-        icons_width + sep_width + 1 + desc_len
+        let icons_w = ma.common.len();
+        let seps_w  = ma.common.len().saturating_sub(1);
+        icons_w + seps_w + 1 + ma.common[0].description.len()
     };
 
-    let content_width = main_width.max(common_width);
-    let content_height =
-        ma.actions.len() + if ma.common.is_empty() { 0 } else { 1 };
+    let content_width  = main_width.max(common_width) + 1; // +1 right margin
+    let content_height = ma.actions.len() + if ma.common.is_empty() { 0 } else { 1 };
 
-    let frame = if border { FRAME_ROWS } else { 0 };
-    let frame_cols = if border { FRAME_COLS } else { 0 };
-    (content_height + frame, content_width + frame_cols)
+    let frame_r = if border { FRAME_ROWS } else { 0 };
+    let frame_c = if border { FRAME_COLS } else { 0 };
+    (content_height + frame_r, content_width + frame_c)
 }
 
-/// Build FloatingPaneCoordinates for a tooltip.
-fn tooltip_coordinates(
-    ma: &ModeActions,
+/// Build FloatingPaneCoordinates for a tooltip given explicit dimensions.
+/// The pane is always borderless (border is drawn manually inside render_tooltip).
+fn tooltip_coordinates_at_size(
+    tt_rows: usize,
+    tt_cols: usize,
     tabs: &[TabInfo],
     status_bar_enabled: bool,
     position: &str,
-    border: bool,
 ) -> FloatingPaneCoordinates {
     let (rows, cols) = tabs
         .iter()
@@ -215,34 +238,25 @@ fn tooltip_coordinates(
         .map(|t| (t.display_area_rows, t.display_area_columns))
         .unwrap_or((24, 80));
 
-    let (height, width) = tooltip_dimensions(ma, border);
     let hud_height = if status_bar_enabled { 1 } else { 0 };
-    let w = width.min(cols);
-    let h = height.min(rows.saturating_sub(hud_height));
+    let w = tt_cols.min(cols);
+    let h = tt_rows.min(rows.saturating_sub(hud_height));
 
     let (x, y) = match position {
-        "bottom-left" => {
-            (0, rows.saturating_sub(hud_height + h))
-        }
-        "top-right" => {
-            (cols.saturating_sub(w), 0)
-        }
-        "top-left" => {
-            (0, 0)
-        }
-        // "bottom-right" (default)
-        _ => {
-            (cols.saturating_sub(w), rows.saturating_sub(hud_height + h))
-        }
+        "bottom-left" => (0, rows.saturating_sub(hud_height + h)),
+        "top-right"   => (cols.saturating_sub(w), 0),
+        "top-left"    => (0, 0),
+        _             => (cols.saturating_sub(w), rows.saturating_sub(hud_height + h)),
     };
 
     FloatingPaneCoordinates::new(
-        Some(format!("{}", x)),
-        Some(format!("{}", y)),
-        Some(format!("{}", w)),
-        Some(format!("{}", h)),
+        Some(format!("{x}")),
+        Some(format!("{y}")),
+        Some(format!("{w}")),
+        Some(format!("{h}")),
         Some(true),
-        if border { None } else { Some(true) },
+        Some(true), // always borderless: manual border drawn in render_tooltip
     )
     .unwrap_or_default()
 }
+

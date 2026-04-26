@@ -16,6 +16,16 @@ impl State {
             self.own_client_id.to_string(),
         );
         config.insert("initial_tab".to_string(), initial_tab.to_string());
+        config.insert("initial_mode".to_string(), format!("{:?}", self.mode));
+        config.insert("session_name".to_string(), self.session_name.clone());
+        config.insert("initial_cwd".to_string(), self.cwd.to_string_lossy().to_string());
+
+        // Include latest command widget results so HUD can render immediately.
+        for (name, output) in &self.command_outputs {
+            if output.exit_code == 0 && !output.stdout.is_empty() {
+                config.insert(format!("cmd_result_{}", name), output.stdout.clone());
+            }
+        }
 
         let msg = MessageToPlugin::new("spawn_hud")
             .with_plugin_url("zellij:OWN_URL")
@@ -51,6 +61,8 @@ impl State {
             self.own_client_id.to_string(),
         );
         config.insert("initial_tab".to_string(), initial_tab.to_string());
+        config.insert("initial_mode".to_string(), format!("{:?}", self.mode));
+        config.insert("session_name".to_string(), self.session_name.clone());
 
         let msg = MessageToPlugin::new("spawn_tooltip")
             .with_plugin_url("zellij:OWN_URL")
@@ -105,7 +117,6 @@ impl State {
     ) -> FloatingPaneCoordinates {
         let (rows, cols) = self.display_area();
         let position = &self.hud_config.tooltip_position;
-        let border = self.hud_config.tooltip_border;
 
         let hud_height = if self.enable_status_bar { 1 } else { 0 };
         let width = tt_cols.min(cols);
@@ -127,13 +138,14 @@ impl State {
             }
         };
 
+        // Always borderless: border is drawn manually inside render_tooltip().
         FloatingPaneCoordinates::new(
             Some(format!("{}", x)),
             Some(format!("{}", y)),
             Some(format!("{}", width)),
             Some(format!("{}", height)),
             Some(true),
-            if border { None } else { Some(true) },
+            Some(true),
         )
         .unwrap_or_default()
     }
