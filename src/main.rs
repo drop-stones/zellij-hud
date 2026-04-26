@@ -99,8 +99,8 @@ pub(crate) struct State {
     pub(crate) spawned_for_client: u16,
     /// Whether run_deferred_init() has already executed (prevents double-execution).
     pub(crate) init_done: bool,
-    /// Last (height, width) used for tooltip pane — avoids redundant coordinate changes.
-    pub(crate) last_tooltip_size: (usize, usize),
+    /// Set when mode changes; render() clears the pane and resizes before drawing.
+    pub(crate) tooltip_needs_resize: bool,
 }
 
 impl Default for State {
@@ -127,7 +127,7 @@ impl Default for State {
             command_outputs: HashMap::new(),
             command_timers: HashMap::new(),
             init_done: false,
-            last_tooltip_size: (0, 0),
+            tooltip_needs_resize: false,
         }
     }
 }
@@ -336,16 +336,9 @@ impl State {
                 return false;
             }
             if mode_changed {
-                let active = self.own_client_id == self.spawned_for_client;
-                if active && self.has_permission && !self.tabs.is_empty() {
-                    // Resize triggers the host to call render() at the correct
-                    // dimensions — no need to render from here.
-                    self.resize_tooltip_for_mode();
-                }
-                // Active: host renders after resize. Inactive: nothing to do.
-                return false;
+                self.tooltip_needs_resize = true;
             }
-            return false;
+            return mode_changed;
         }
         // HUD: always render on mode change.
         mode_changed
@@ -851,6 +844,19 @@ impl ZellijPlugin for State {
                 );
             }
             Role::Tooltip => {
+                // On mode change, clear the pane and resize before rendering
+                // so the user sees a blank flash instead of stale keybindings.
+                if self.tooltip_needs_resize {
+                    self.tooltip_needs_resize = false;
+                    let is_active = self.own_client_id == self.spawned_for_client;
+                    if is_active && self.has_permission && !self.tabs.is_empty() {
+                        for _ in 0.._rows {
+                            print!("{}", " ".repeat(cols));
+                        }
+                        self.resize_tooltip_for_mode();
+                        return;
+                    }
+                }
                 self.render_tooltip(_rows, cols);
             }
             Role::Daemon => {}

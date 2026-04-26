@@ -143,7 +143,6 @@ impl State {
         if height == 0 || width == 0 {
             return;
         }
-        self.last_tooltip_size = (height, width);
         let coords = tooltip_coordinates_at_size(
             height, width, &self.tabs,
             self.hud_config.enable_status_bar,
