@@ -205,7 +205,7 @@ fn tooltip_dimensions(ma: &ModeActions, border: bool) -> (usize, usize) {
         icons_w + seps_w + 1 + ma.common[0].description.len()
     };
 
-    let content_width  = main_width.max(common_width);
+    let content_width  = main_width.max(common_width) + 1; // +1 right margin
     let content_height = ma.actions.len() + if ma.common.is_empty() { 0 } else { 1 };
 
     let frame_r = if border { FRAME_ROWS } else { 0 };
