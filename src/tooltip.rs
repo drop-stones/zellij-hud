@@ -27,6 +27,16 @@ impl State {
         let ma = get_actions_for_mode(mode_info, self.mode);
         let c = &self.hud_config;
         let border = c.tooltip_border;
+
+        // Guard: pane too small to render anything meaningful.
+        let min_rows = if border { FRAME_ROWS + 1 } else { 1 };
+        let min_cols = if border { FRAME_COLS + 1 } else { 1 };
+        if rows < min_rows || cols < min_cols {
+            for _ in 0..rows {
+                print!("{}", " ".repeat(cols));
+            }
+            return;
+        }
         let reset = "\x1b[0m";
 
         let key_color  = c.resolve_color_with_accent(&c.tooltip_key_color,   &c.palette, self.mode).fg();
@@ -34,7 +44,7 @@ impl State {
         let desc_color = c.resolve_color_with_accent(&c.tooltip_description_color, &c.palette, self.mode).fg();
         let mode_color = c.resolve_color_with_accent(&c.tooltip_mode_color,   &c.palette, self.mode).fg();
         let bdr_color  = c.resolve_color_with_accent(&c.tooltip_border_color, &c.palette, self.mode).fg();
-        let separator  = c.tooltip_separator.clone();
+        let separator  = c.tooltip_separator.as_str();
 
         let inner_cols = if border { cols.saturating_sub(FRAME_COLS) } else { cols };
         let has_common = !ma.common.is_empty();

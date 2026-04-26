@@ -235,30 +235,36 @@ impl State {
     }
 
     /// Spawn HUD/Tooltip if the Daemon is in a non-base mode and all required state
-    /// (tabs, mode_info) is available.  Called from PermissionRequestResult and
-    /// TabUpdate to recover from the race where ModeUpdate arrived before permission
-    /// was granted and the spawn was skipped.
-    fn daemon_try_spawn(&mut self) {
+    /// (tabs, mode_info) is available.  Returns true if any pane was spawned.
+    /// Callers are responsible for broadcasting mode_sync; this method only
+    /// sends the heavyweight mode_info_sync when new instances are created.
+    fn daemon_try_spawn(&mut self) -> bool {
         if self.role != Role::Daemon || !self.has_permission {
-            return;
+            return false;
         }
         // mode_info being None means no ModeUpdate has arrived yet; self.mode is
         // stale (default Locked).  Wait until mode_info is populated.
         if self.mode_info.is_none() || self.tabs.is_empty() {
-            return;
+            return false;
         }
         let base = self.resolve_base_mode();
         let mode = self.mode;
         if mode == base {
-            return;
+            return false;
         }
+        let mut spawned = false;
         if self.enable_status_bar && !self.hud_is_open {
             self.spawn_hud();
+            spawned = true;
         }
         if !is_tooltip_hidden_mode(mode, base) && self.enable_tooltip && !self.tooltip_is_open {
             self.spawn_tooltip(mode);
+            spawned = true;
         }
-        self.broadcast_mode_sync();
+        if spawned {
+            self.broadcast_mode_info_sync();
+        }
+        spawned
     }
 
     /// Broadcast this Daemon instance's current mode to all peers via pipe.
@@ -267,9 +273,12 @@ impl State {
             MessageToPlugin::new("mode_sync")
                 .with_payload(format!("{}:{:?}", self.own_client_id, self.mode)),
         );
-        // Also broadcast the full ModeInfo so newly spawned Tooltip
-        // instances can render keybindings without waiting for the
-        // next ModeUpdate event.
+    }
+
+    /// Send the full ModeInfo JSON to peers. Only needed when a new
+    /// HUD/Tooltip is spawned or when responding to `request_mode_sync`,
+    /// not on every mode change.
+    fn broadcast_mode_info_sync(&self) {
         if let Some(mi) = &self.mode_info {
             if let Ok(json) = serde_json::to_string(mi) {
                 pipe_message_to_plugin(
@@ -581,8 +590,9 @@ impl ZellijPlugin for State {
                                     self.tooltip_is_open = false;
                                 }
                             } else {
-                                // Non-base: attempt spawn.
-                                // daemon_try_spawn guards on tabs/mode_info being ready.
+                                // daemon_try_spawn handles mode_info_sync for
+                                // newly spawned instances; mode_sync is always
+                                // sent here (once) for all existing instances.
                                 self.daemon_try_spawn();
                             }
                             self.broadcast_mode_sync();
@@ -728,6 +738,7 @@ impl ZellijPlugin for State {
                 // Each Daemon responds; HUD/Tooltip will use only their spawner's reply.
                 if self.role == Role::Daemon && self.has_permission {
                     self.broadcast_mode_sync();
+                    self.broadcast_mode_info_sync();
                 }
                 false
             }
