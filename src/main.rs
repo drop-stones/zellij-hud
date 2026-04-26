@@ -847,9 +847,9 @@ impl ZellijPlugin for State {
                 // On mode change, clear the pane and resize before rendering
                 // so the user sees a blank flash instead of stale keybindings.
                 if self.tooltip_needs_resize {
-                    self.tooltip_needs_resize = false;
                     let is_active = self.own_client_id == self.spawned_for_client;
                     if is_active && self.has_permission && !self.tabs.is_empty() {
+                        self.tooltip_needs_resize = false;
                         for _ in 0.._rows {
                             print!("{}", " ".repeat(cols));
                         }
