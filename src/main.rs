@@ -590,6 +590,11 @@ impl ZellijPlugin for State {
                                     self.tooltip_is_open = false;
                                 }
                             } else {
+                                // Close tooltip for hidden modes (rename/enter_search).
+                                if is_tooltip_hidden_mode(new_mode, base) && self.tooltip_is_open {
+                                    self.close_tooltip_via_pipe();
+                                    self.tooltip_is_open = false;
+                                }
                                 // daemon_try_spawn handles mode_info_sync for
                                 // newly spawned instances; mode_sync is always
                                 // sent here (once) for all existing instances.
