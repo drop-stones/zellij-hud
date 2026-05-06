@@ -60,6 +60,11 @@ pub(crate) fn get_actions_for_mode(
     // Find (key, ActionType) pairs shared across all non-base, non-text-input modes.
     let base_mode = mode_info.base_mode.unwrap_or(InputMode::Normal);
     let shared = find_shared_bindings(mode_info, base_mode);
+    // Navigation back keys (Esc/Enter) detected via "exits via SwitchToMode in
+    // every mode" rather than (key, ActionType) pair equality. Catches mode-
+    // specific overrides where the binding still exits but the leading action
+    // differs (e.g. Scroll's `Esc { ScrollToBottom; SwitchToMode "Locked"; }`).
+    let nav_keys = find_navigation_keys(mode_info, base_mode);
 
     // Collect all keybinds, deduplicating by ActionType (keep shortest key).
     let mut actions: Vec<KeyAction> = Vec::new();
@@ -78,6 +83,10 @@ pub(crate) fn get_actions_for_mode(
 
         let key_raw = format!("{}", key);
 
+        // Skip navigation back keys — rendered in the bottom common area.
+        if nav_keys.contains(&key_raw) {
+            continue;
+        }
         // Skip if this exact (key, action) pair is shared across all modes
         if shared.contains(&(key_raw.clone(), action_type.clone())) {
             continue;
@@ -104,7 +113,7 @@ pub(crate) fn get_actions_for_mode(
     actions.sort_by_key(|a| a.action_type.sort_key());
 
     // Find iconifiable shared keys for bottom display
-    let common = find_common_keys(&shared, &keybinds);
+    let common = find_common_keys(&shared, &nav_keys, &keybinds);
 
     ModeActions { actions, common }
 }
@@ -144,30 +153,107 @@ fn find_shared_bindings(mode_info: &ModeInfo, base_mode: InputMode) -> HashSet<(
     common
 }
 
-/// Find iconifiable keys among shared bindings for compact bottom display.
+/// Return the target InputMode of the LAST `SwitchToMode` action in the
+/// sequence, or `None` if the binding never exits via SwitchToMode.
+/// "Last" matches the runtime semantics: any earlier side effect (e.g.
+/// `ScrollToBottom`) runs first, then the mode switch wins.
+fn switch_to_mode_target(actions: &[Action]) -> Option<InputMode> {
+    actions.iter().rev().find_map(|a| {
+        if let Action::SwitchToMode { input_mode } = a {
+            Some(*input_mode)
+        } else {
+            None
+        }
+    })
+}
+
+/// Detect "back/exit" keys (Esc, Enter, ...) that exit every non-base,
+/// non-text-input mode via a SwitchToMode action, regardless of any
+/// leading side-effect actions. Returns the set of qualifying key strings.
+fn find_navigation_keys(mode_info: &ModeInfo, base_mode: InputMode) -> HashSet<String> {
+    let modes: Vec<InputMode> = mode_info
+        .keybinds
+        .iter()
+        .map(|(m, _)| *m)
+        .filter(|m| *m != base_mode && !TEXT_INPUT_MODES.contains(m))
+        .collect();
+
+    if modes.is_empty() {
+        return HashSet::new();
+    }
+
+    // Candidate keys: those with a tooltip icon, observed in any mode.
+    let mut candidates: HashSet<String> = HashSet::new();
+    for m in &modes {
+        for (key, _) in all_keybinds_for_mode(mode_info, *m) {
+            let key_str = format!("{}", key);
+            if key_to_icon(&key_str).is_some() {
+                candidates.insert(key_str);
+            }
+        }
+    }
+
+    let mut result = HashSet::new();
+    for nav_key in candidates {
+        let exits_all = modes.iter().all(|m| {
+            all_keybinds_for_mode(mode_info, *m)
+                .iter()
+                .any(|(key, actions)| {
+                    format!("{}", key) == nav_key
+                        && switch_to_mode_target(actions).is_some()
+                })
+        });
+        if exits_all {
+            result.insert(nav_key);
+        }
+    }
+    result
+}
+
+/// Find iconifiable keys for compact bottom display.
+/// Includes both `(key, ActionType)`-shared keys and navigation back keys.
 fn find_common_keys(
     shared: &HashSet<(String, ActionType)>,
+    nav_keys: &HashSet<String>,
     keybinds: &[(KeyWithModifier, Vec<Action>)],
 ) -> Vec<CommonKey> {
     let mut seen_icons = Vec::new();
     let mut common = Vec::new();
 
     for (key, actions) in keybinds {
-        if let Some(first) = actions.first() {
-            let key_str = format!("{}", key);
-            let action_type = ActionType::from_action(first);
-            if shared.contains(&(key_str.clone(), action_type.clone())) {
-                if let Some(icon) = key_to_icon(&key_str) {
-                    if !seen_icons.contains(&icon) {
-                        seen_icons.push(icon);
-                        common.push(CommonKey {
-                            icon,
-                            description: action_type.description(),
-                        });
-                    }
-                }
-            }
+        let first = match actions.first() {
+            Some(a) => a,
+            None => continue,
+        };
+        let key_str = format!("{}", key);
+        let icon = match key_to_icon(&key_str) {
+            Some(i) => i,
+            None => continue,
+        };
+        if seen_icons.contains(&icon) {
+            continue;
         }
+
+        let action_type = ActionType::from_action(first);
+        let from_shared = shared.contains(&(key_str.clone(), action_type.clone()));
+        let from_nav = nav_keys.contains(&key_str);
+        if !from_shared && !from_nav {
+            continue;
+        }
+
+        // For nav keys, prefer the SwitchToMode target's name so the user
+        // sees where Esc/Enter actually takes them in this mode (e.g. "+scroll"
+        // instead of "Scroll bottom" when Esc is `ScrollToBottom; SwitchToMode`).
+        let description = if from_nav {
+            switch_to_mode_target(actions)
+                .map(|m| ActionType::SwitchToMode(m).description())
+                .unwrap_or_else(|| action_type.description())
+        } else {
+            action_type.description()
+        };
+
+        seen_icons.push(icon);
+        common.push(CommonKey { icon, description });
     }
 
     common
