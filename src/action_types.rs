@@ -155,11 +155,11 @@ impl ActionType {
             ActionType::ResizeDecreaseDown => 61,
             ActionType::ResizeDecreaseUp => 62,
             ActionType::ResizeDecreaseRight => 63,
-            ActionType::MoveTabLeft => 54,
-            ActionType::MoveTabRight => 55,
-            ActionType::BreakPane => 64,
-            ActionType::BreakPaneLeft => 65,
-            ActionType::BreakPaneRight => 66,
+            ActionType::MoveTabLeft => 64,
+            ActionType::MoveTabRight => 65,
+            ActionType::BreakPane => 66,
+            ActionType::BreakPaneLeft => 67,
+            ActionType::BreakPaneRight => 68,
 
             // Toggle (70–79)
             ActionType::ToggleFocusFullscreen => 70,

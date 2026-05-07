@@ -76,7 +76,9 @@ pub(crate) fn get_actions_for_mode(
         };
         let action_type = ActionType::from_action(first);
 
-        // Skip NoOp
+        // Skip unclassified actions (NoOp and any Action variant we have no
+        // typed classification for): they have no description or icon, so
+        // they cannot be rendered in the tooltip.
         if matches!(&action_type, ActionType::Other(_)) {
             continue;
         }
