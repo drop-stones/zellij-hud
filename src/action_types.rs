@@ -2,7 +2,7 @@ use zellij_tile::prelude::actions::Action;
 use zellij_tile::prelude::*;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub(crate) enum ActionType {
+pub enum ActionType {
     // Mode switches
     SwitchToMode(InputMode),
 
@@ -93,7 +93,7 @@ pub(crate) enum ActionType {
 
 impl ActionType {
     /// Fixed sort order for tooltip display.
-    pub(crate) fn sort_key(&self) -> u16 {
+    pub fn sort_key(&self) -> u16 {
         match self {
             // Mode switches (0–19)
             ActionType::SwitchToMode(m) => match m {
@@ -187,7 +187,7 @@ impl ActionType {
         }
     }
 
-    pub(crate) fn description(&self) -> String {
+    pub fn description(&self) -> String {
         match self {
             ActionType::SwitchToMode(m) if *m == InputMode::RenamePane => "+rename-pane".into(),
             ActionType::SwitchToMode(m) if *m == InputMode::RenameTab => "+rename-tab".into(),
@@ -262,12 +262,12 @@ impl ActionType {
     }
 
     /// Whether this action switches to another input mode.
-    pub(crate) fn is_mode_switch(&self) -> bool {
+    pub fn is_mode_switch(&self) -> bool {
         matches!(self, ActionType::SwitchToMode(_))
     }
 
     /// Icon for the action type.
-    pub(crate) fn icon(&self) -> &str {
+    pub fn icon(&self) -> &str {
         match self {
             ActionType::SwitchToMode(m) => match m {
                 InputMode::Normal => "󰍀",
@@ -337,7 +337,7 @@ impl ActionType {
     }
 
     /// Color for the icon, derived from the theme palette.
-    pub(crate) fn icon_color<'a>(
+    pub fn icon_color<'a>(
         &self,
         colors: &'a crate::config::IconColors,
     ) -> &'a crate::config::Color {
@@ -400,7 +400,7 @@ impl ActionType {
         }
     }
 
-    pub(crate) fn from_action(action: &Action) -> Self {
+    pub fn from_action(action: &Action) -> Self {
         use actions::SearchDirection;
         use actions::SearchOption;
 
@@ -479,13 +479,13 @@ impl ActionType {
 }
 
 /// Returns true if the action launches any plugin (known or unknown).
-pub(crate) fn is_any_plugin_launch(action: &Action) -> bool {
+pub fn is_any_plugin_launch(action: &Action) -> bool {
     let s = format!("{:?}", action);
     s.starts_with("LaunchOrFocusPlugin") || s.starts_with("LaunchPlugin(")
 }
 
 /// Extract a canonical plugin name string from a plugin-launch action.
-pub(crate) fn extract_plugin_name(action: &Action) -> String {
+pub fn extract_plugin_name(action: &Action) -> String {
     let s = format!("{:?}", action);
     if let Some(after) = s.split("name: \"").nth(1) {
         if let Some(name) = after.split('"').next() {

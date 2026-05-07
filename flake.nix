@@ -61,6 +61,10 @@
             rustToolchain
             pkgs.rust-analyzer
             pkgs.binaryen # wasm-opt
+            # `cargo test` builds for the host target, which pulls in
+            # zellij-utils -> isahc -> curl -> openssl-sys.
+            pkgs.pkg-config
+            pkgs.openssl
           ];
         };
       }

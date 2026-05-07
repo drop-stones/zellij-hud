@@ -1,7 +1,3 @@
-mod action_types;
-mod commands;
-mod config;
-mod keybinds;
 pub(crate) mod render;
 mod spans;
 mod spawn;
@@ -14,7 +10,8 @@ use std::path::PathBuf;
 
 use std::borrow::Cow;
 
-use commands::{CMD_CONTEXT_USER, CommandOutput};
+use zellij_hud::{action_types, config, keybinds};
+use zellij_hud::commands::{CMD_CONTEXT_USER, CommandOutput};
 
 /// Single-quote a string for safe use in sh -c commands.
 fn shell_escape(s: &str) -> Cow<'_, str> {

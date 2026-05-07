@@ -4,7 +4,7 @@ use zellij_tile::prelude::{InputMode, PaletteColor, Styling};
 
 /// RGB or 8-bit terminal color, used throughout the HUD for fg and bg rendering.
 #[derive(Clone, Default)]
-pub(crate) enum Color {
+pub enum Color {
     #[default]
     None,
     Rgb(u8, u8, u8),
@@ -13,7 +13,7 @@ pub(crate) enum Color {
 
 impl Color {
     /// ANSI foreground escape sequence.
-    pub(crate) fn fg(&self) -> String {
+    pub fn fg(&self) -> String {
         match self {
             Color::None => String::new(),
             Color::Rgb(r, g, b) => format!("\x1b[38;2;{};{};{}m", r, g, b),
@@ -21,7 +21,7 @@ impl Color {
         }
     }
     /// ANSI background escape sequence.
-    pub(crate) fn bg(&self) -> String {
+    pub fn bg(&self) -> String {
         match self {
             Color::None => String::new(),
             Color::Rgb(r, g, b) => format!("\x1b[48;2;{};{};{}m", r, g, b),
@@ -45,17 +45,17 @@ impl Color {
 /// Per-widget style (v3 config). Color values are stored as raw strings
 /// (palette names, hex, or "accent") and resolved at render time.
 #[derive(Clone, Default)]
-pub(crate) struct WidgetStyle {
+pub struct WidgetStyle {
     /// Foreground color: palette name, hex, or "accent".
-    pub(crate) fg: String,
+    pub fg: String,
     /// Background color: palette name, hex, or "accent". Empty = no bg.
-    pub(crate) bg: String,
+    pub bg: String,
     /// Text decorations: "bold", "italic", "bold,italic", or "".
-    pub(crate) attr: String,
+    pub attr: String,
 }
 
 impl WidgetStyle {
-    pub(crate) fn new(fg: &str, bg: &str, attr: &str) -> Self {
+    pub fn new(fg: &str, bg: &str, attr: &str) -> Self {
         Self {
             fg: fg.to_string(),
             bg: bg.to_string(),
@@ -335,19 +335,19 @@ impl StyleDefaults {
 /// 12-color palette used to derive all UI colors.
 /// Stored in HudConfig for runtime color resolution (accent, palette names).
 #[derive(Clone)]
-pub(crate) struct ThemePalette {
-    pub(crate) fg: String,
-    pub(crate) bg: String,
-    pub(crate) dim: String,
-    pub(crate) surface: String,
-    pub(crate) surface_bright: String,
-    pub(crate) red: String,
-    pub(crate) green: String,
-    pub(crate) yellow: String,
-    pub(crate) blue: String,
-    pub(crate) magenta: String,
-    pub(crate) cyan: String,
-    pub(crate) orange: String,
+pub struct ThemePalette {
+    pub fg: String,
+    pub bg: String,
+    pub dim: String,
+    pub surface: String,
+    pub surface_bright: String,
+    pub red: String,
+    pub green: String,
+    pub yellow: String,
+    pub blue: String,
+    pub magenta: String,
+    pub cyan: String,
+    pub orange: String,
 }
 
 impl ThemePalette {
@@ -355,7 +355,7 @@ impl ThemePalette {
     ///
     /// Maps `StyleDeclaration` fields back to semantic palette colors using the
     /// known `Palette → Styling` conversion in zellij (data.rs:1577).
-    pub(crate) fn from_styling(s: &Styling) -> Self {
+    pub fn from_styling(s: &Styling) -> Self {
         let fg = s.text_unselected.base;
         // Derive dim from fg. table_title.background maps to palette.gray, but
         // old-style palette themes don't define gray and new-style themes may
@@ -379,7 +379,7 @@ impl ThemePalette {
     }
 
     /// Look up a built-in theme by name. Unknown names fall back to tokyonight.
-    pub(crate) fn from_name(name: &str) -> Self {
+    pub fn from_name(name: &str) -> Self {
         match name {
             "catppuccin-mocha" => Self {
                 fg: "#cdd6f4".into(),
@@ -429,7 +429,7 @@ impl ThemePalette {
     }
 
     /// Apply `palette_*` overrides from user config.
-    pub(crate) fn apply_overrides(&mut self, config: &BTreeMap<String, String>) {
+    pub fn apply_overrides(&mut self, config: &BTreeMap<String, String>) {
         macro_rules! override_field {
             ($key:expr, $field:expr) => {
                 if let Some(v) = config.get($key) {
@@ -454,7 +454,7 @@ impl ThemePalette {
 
 impl ThemePalette {
     /// Resolve a palette color name to its hex value.
-    pub(crate) fn resolve(&self, name: &str) -> Option<&str> {
+    pub fn resolve(&self, name: &str) -> Option<&str> {
         match name {
             "fg" => Some(&self.fg),
             "bg" => Some(&self.bg),
@@ -523,16 +523,16 @@ impl Default for ThemePalette {
 }
 
 /// ANSI color escapes for icon categories in the tooltip.
-pub(crate) struct IconColors {
-    pub(crate) navigation: Color,
-    pub(crate) create: Color,
-    pub(crate) close: Color,
-    pub(crate) resize: Color,
-    pub(crate) toggle: Color,
-    pub(crate) search: Color,
-    pub(crate) mode_switch: Color,
-    pub(crate) plugin: Color,
-    pub(crate) dim: Color,
+pub struct IconColors {
+    pub navigation: Color,
+    pub create: Color,
+    pub close: Color,
+    pub resize: Color,
+    pub toggle: Color,
+    pub search: Color,
+    pub mode_switch: Color,
+    pub plugin: Color,
+    pub dim: Color,
 }
 
 impl IconColors {
@@ -554,130 +554,130 @@ impl IconColors {
 
 /// User-defined command widget: runs a shell command at an interval.
 #[derive(Clone)]
-pub(crate) struct CommandWidget {
+pub struct CommandWidget {
     /// Shell command to execute.
-    pub(crate) command: String,
+    pub command: String,
     /// Widget style.
-    pub(crate) style: WidgetStyle,
+    pub style: WidgetStyle,
     /// Output format template. Placeholders: {stdout}, {exit_code}.
-    pub(crate) format: String,
+    pub format: String,
     /// Execution interval in seconds. 0 = run once.
-    pub(crate) interval: u32,
+    pub interval: u32,
 }
 
 /// User-defined static text widget.
 #[derive(Clone)]
-pub(crate) struct TextWidget {
+pub struct TextWidget {
     /// Static content to display.
-    pub(crate) content: String,
+    pub content: String,
     /// Widget style.
-    pub(crate) style: WidgetStyle,
+    pub style: WidgetStyle,
     /// Format template. Placeholder: {content}. Default: "{content}".
-    pub(crate) format: String,
+    pub format: String,
 }
 
-pub(crate) struct HudConfig {
-    pub(crate) format_left: String,
-    pub(crate) format_center: String,
-    pub(crate) format_right: String,
+pub struct HudConfig {
+    pub format_left: String,
+    pub format_center: String,
+    pub format_right: String,
     /// HUD bar background color (palette name or hex, resolved at render time).
-    pub(crate) bar_bg: String,
-    pub(crate) icon_colors: IconColors,
+    pub bar_bg: String,
+    pub icon_colors: IconColors,
     // --- Tooltip settings ---
     /// Key text color (palette name or hex).
-    pub(crate) tooltip_key_color: String,
+    pub tooltip_key_color: String,
     /// Separator color between key and description.
-    pub(crate) tooltip_separator_color: String,
+    pub tooltip_separator_color: String,
     /// Description text color.
-    pub(crate) tooltip_description_color: String,
+    pub tooltip_description_color: String,
     /// Mode-switch description color.
-    pub(crate) tooltip_mode_color: String,
+    pub tooltip_mode_color: String,
     /// Tooltip content background (empty = default frame bg).
-    pub(crate) tooltip_bg: String,
+    pub tooltip_bg: String,
     /// Frame border color.
-    pub(crate) tooltip_border_color: String,
+    pub tooltip_border_color: String,
     /// Separator character between key and description.
-    pub(crate) tooltip_separator: String,
+    pub tooltip_separator: String,
     /// Position: "bottom-right", "bottom-left", "top-right", "top-left".
-    pub(crate) tooltip_position: String,
+    pub tooltip_position: String,
     /// Frame title template. {mode} = current mode name. Empty = no title.
-    pub(crate) tooltip_title: String,
+    pub tooltip_title: String,
     /// Whether to show the tooltip border.
-    pub(crate) tooltip_border: bool,
-    pub(crate) enable_status_bar: bool,
-    pub(crate) enable_tooltip: bool,
+    pub tooltip_border: bool,
+    pub enable_status_bar: bool,
+    pub enable_tooltip: bool,
     /// Whether to use zellij's theme colors (theme "system").
-    pub(crate) use_system_theme: bool,
+    pub use_system_theme: bool,
     /// Per-mode accent color (palette name or hex). Widgets using "accent"
     /// resolve to this map at render time based on the current mode.
-    pub(crate) mode_accent: HashMap<InputMode, String>,
+    pub mode_accent: HashMap<InputMode, String>,
 
     // --- v3 widget styles ---
 
     /// Mode widget style.
-    pub(crate) mode_style: WidgetStyle,
+    pub mode_style: WidgetStyle,
     /// Mode format template. Placeholder: {content} (resolved mode text).
-    pub(crate) mode_format: String,
+    pub mode_format: String,
     /// Per-mode display content (e.g., "󰍀 NORMAL").
-    pub(crate) mode_content: HashMap<InputMode, String>,
+    pub mode_content: HashMap<InputMode, String>,
 
     /// Session widget style.
-    pub(crate) session_style: WidgetStyle,
+    pub session_style: WidgetStyle,
     /// Session format template. Placeholder: {name}.
-    pub(crate) session_format: String,
+    pub session_format: String,
 
     /// Active tab style.
-    pub(crate) tab_active_style: WidgetStyle,
+    pub tab_active_style: WidgetStyle,
     /// Inactive tab style.
-    pub(crate) tab_inactive_style: WidgetStyle,
+    pub tab_inactive_style: WidgetStyle,
     /// Active tab format template. Placeholders: {name}, {index}, {sync_indicator}, {fullscreen_indicator}.
-    pub(crate) tab_active_format: String,
+    pub tab_active_format: String,
     /// Inactive tab format template. Same placeholders as active.
-    pub(crate) tab_inactive_format: String,
+    pub tab_inactive_format: String,
     /// Sync indicator text (shown conditionally).
-    pub(crate) tab_sync_indicator: String,
+    pub tab_sync_indicator: String,
     /// Fullscreen indicator text (shown conditionally).
-    pub(crate) tab_fullscreen_indicator: String,
+    pub tab_fullscreen_indicator: String,
     /// Separator text inserted between adjacent tabs. Default: empty string.
-    pub(crate) tab_separator_content: String,
+    pub tab_separator_content: String,
     /// Tab separator style.
-    pub(crate) tab_separator_style: WidgetStyle,
+    pub tab_separator_style: WidgetStyle,
     /// Optional per-placeholder styles within tab formats.
     /// When set, the placeholder text uses this style instead of the tab style.
-    pub(crate) tab_active_index_style: Option<WidgetStyle>,
-    pub(crate) tab_active_name_style: Option<WidgetStyle>,
-    pub(crate) tab_active_sync_style: Option<WidgetStyle>,
-    pub(crate) tab_active_fullscreen_style: Option<WidgetStyle>,
-    pub(crate) tab_inactive_index_style: Option<WidgetStyle>,
-    pub(crate) tab_inactive_name_style: Option<WidgetStyle>,
-    pub(crate) tab_inactive_sync_style: Option<WidgetStyle>,
-    pub(crate) tab_inactive_fullscreen_style: Option<WidgetStyle>,
+    pub tab_active_index_style: Option<WidgetStyle>,
+    pub tab_active_name_style: Option<WidgetStyle>,
+    pub tab_active_sync_style: Option<WidgetStyle>,
+    pub tab_active_fullscreen_style: Option<WidgetStyle>,
+    pub tab_inactive_index_style: Option<WidgetStyle>,
+    pub tab_inactive_name_style: Option<WidgetStyle>,
+    pub tab_inactive_sync_style: Option<WidgetStyle>,
+    pub tab_inactive_fullscreen_style: Option<WidgetStyle>,
     /// Format templates for tab sub-placeholders. {content} is the value.
-    pub(crate) tab_active_index_format: String,
-    pub(crate) tab_active_name_format: String,
-    pub(crate) tab_active_sync_format: String,
-    pub(crate) tab_active_fullscreen_format: String,
-    pub(crate) tab_inactive_index_format: String,
-    pub(crate) tab_inactive_name_format: String,
-    pub(crate) tab_inactive_sync_format: String,
-    pub(crate) tab_inactive_fullscreen_format: String,
+    pub tab_active_index_format: String,
+    pub tab_active_name_format: String,
+    pub tab_active_sync_format: String,
+    pub tab_active_fullscreen_format: String,
+    pub tab_inactive_index_format: String,
+    pub tab_inactive_name_format: String,
+    pub tab_inactive_sync_format: String,
+    pub tab_inactive_fullscreen_format: String,
 
     /// CWD widget style.
-    pub(crate) cwd_style: WidgetStyle,
+    pub cwd_style: WidgetStyle,
     /// CWD format template. Placeholder: {cwd}.
-    pub(crate) cwd_format: String,
+    pub cwd_format: String,
 
     /// User-defined command widgets, keyed by name.
-    pub(crate) command_widgets: HashMap<String, CommandWidget>,
+    pub command_widgets: HashMap<String, CommandWidget>,
     /// User-defined text widgets, keyed by name.
-    pub(crate) text_widgets: HashMap<String, TextWidget>,
+    pub text_widgets: HashMap<String, TextWidget>,
 
     /// Theme palette for runtime color resolution (accent, palette names).
-    pub(crate) palette: ThemePalette,
+    pub palette: ThemePalette,
 }
 
 impl HudConfig {
-    pub(crate) fn from_config(config: &BTreeMap<String, String>) -> Self {
+    pub fn from_config(config: &BTreeMap<String, String>) -> Self {
         let use_system_theme = config.get("theme").map_or(true, |t| t == "system");
 
         // For "system" (default), use tokyonight as placeholder until ModeUpdate delivers Styling.
@@ -693,7 +693,7 @@ impl HudConfig {
     }
 
     /// Rebuild colors from zellij's system theme. Called when ModeUpdate arrives.
-    pub(crate) fn apply_system_theme(
+    pub fn apply_system_theme(
         &mut self,
         styling: &Styling,
         config: &BTreeMap<String, String>,
@@ -1227,7 +1227,7 @@ impl HudConfig {
     }
 
     /// Resolve a color value that may be "accent", a palette name, or hex.
-    pub(crate) fn resolve_color_with_accent(
+    pub fn resolve_color_with_accent(
         &self,
         value: &str,
         palette: &ThemePalette,

@@ -6,23 +6,23 @@ use zellij_tile::prelude::*;
 use crate::action_types::ActionType;
 
 /// A single keybinding entry for tooltip display.
-pub(crate) struct KeyAction {
-    pub(crate) key: String,
-    pub(crate) action_type: ActionType,
-    pub(crate) description: String,
+pub struct KeyAction {
+    pub key: String,
+    pub action_type: ActionType,
+    pub description: String,
 }
 
 /// A compact "back/exit" key shown at the bottom.
-pub(crate) struct CommonKey {
+pub struct CommonKey {
     /// Icon representing the key (e.g., 󱊷 for ESC).
-    pub(crate) icon: &'static str,
-    pub(crate) description: String,
+    pub icon: &'static str,
+    pub description: String,
 }
 
 /// Result of keybinding extraction: mode-specific actions + common keys.
-pub(crate) struct ModeActions {
-    pub(crate) actions: Vec<KeyAction>,
-    pub(crate) common: Vec<CommonKey>,
+pub struct ModeActions {
+    pub actions: Vec<KeyAction>,
+    pub common: Vec<CommonKey>,
 }
 
 /// Text-input modes excluded from shared-key detection
@@ -51,7 +51,7 @@ fn all_keybinds_for_mode(
 }
 
 /// Extract keybinding hints for a given mode, separating common/back keys.
-pub(crate) fn get_actions_for_mode(
+pub fn get_actions_for_mode(
     mode_info: &ModeInfo,
     mode: InputMode,
 ) -> ModeActions {
@@ -271,7 +271,7 @@ fn key_to_icon(key: &str) -> Option<&'static str> {
 }
 
 /// Format a key string for display (Ctrl → C-, Alt → A-).
-pub(crate) fn format_key(key: &str) -> String {
+pub fn format_key(key: &str) -> String {
     if let Some(rest) = key.strip_prefix("Ctrl ") {
         format!("C-{}", rest)
     } else if let Some(rest) = key.strip_prefix("Alt ") {
