@@ -386,7 +386,10 @@ impl State {
 
         let base = self.resolve_base_mode();
         let mode_changed = self.mode != mode;
-        if mode_changed {
+        // Skip self.mode update when transitioning to base mode: the Daemon's
+        // close_{hud,tooltip} pipe will close this instance shortly, and
+        // rendering base-mode content before the close causes a flash.
+        if mode_changed && mode != base {
             self.mode = mode;
         }
         if self.role == Role::Tooltip {
@@ -400,8 +403,9 @@ impl State {
             }
             return mode_changed;
         }
-        // HUD: always render on mode change.
-        mode_changed
+        // HUD: render on mode change, except when transitioning to base mode
+        // (avoid a "LOCKED" flash before close).
+        mode_changed && mode != base
     }
 }
 
@@ -645,7 +649,11 @@ impl ZellijPlugin for State {
 
                 match self.role {
                     Role::Hud => {
-                        if is_active_clone {
+                        // Skip self.mode update when transitioning to base
+                        // mode: the Daemon's close_hud pipe will close this
+                        // instance shortly, and rendering the base-mode label
+                        // ("LOCKED" etc.) before the close causes a flash.
+                        if is_active_clone && new_mode != base {
                             self.mode = new_mode;
                         }
                     }
@@ -700,6 +708,11 @@ impl ZellijPlugin for State {
                 if self.role == Role::Tooltip {
                     return tooltip_active_changed
                         || (is_initial && self.mode == new_mode);
+                }
+                // HUD active clone: suppress render on base-mode transition
+                // (see comment in Role::Hud match arm above).
+                if self.role == Role::Hud && is_active_clone && new_mode == base {
+                    return false;
                 }
                 true
             }
