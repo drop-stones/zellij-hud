@@ -177,3 +177,176 @@ pub fn resolve_span_color(value: &str, config: &HudConfig, mode: InputMode) -> S
         _ => SpanColor::Concrete(config.resolve_color_with_accent(value, &config.palette, mode)),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn lit(s: &str) -> Span {
+        Span {
+            text: s.to_string(),
+            fg: SpanColor::Concrete(Color::None),
+            bg: SpanColor::Concrete(Color::None),
+            attr: String::new(),
+        }
+    }
+
+    fn rgb(r: u8, g: u8, b: u8) -> Color {
+        Color::Rgb(r, g, b)
+    }
+
+    fn token_strings(format_str: &str) -> Vec<String> {
+        tokenize(format_str)
+            .into_iter()
+            .map(|t| match t {
+                Token::Literal(s) => format!("L:{}", s),
+                Token::Ref(s) => format!("R:{}", s),
+            })
+            .collect()
+    }
+
+    #[test]
+    fn tokenize_splits_literals_and_refs() {
+        assert_eq!(
+            token_strings(" hello {name} world "),
+            vec!["L: hello ", "R:name", "L: world "],
+        );
+    }
+
+    #[test]
+    fn tokenize_handles_no_refs_as_single_literal() {
+        assert_eq!(token_strings("plain text"), vec!["L:plain text"]);
+    }
+
+    #[test]
+    fn tokenize_keeps_unclosed_brace_as_literal() {
+        // Avoid silent loss: a stray `{` must end up in the output.
+        assert_eq!(token_strings("a {b"), vec!["L:a {b"]);
+    }
+
+    #[test]
+    fn tokenize_treats_empty_braces_as_text_minus_closing_brace() {
+        // `{}` isn't a valid widget reference. The current parser keeps the
+        // opening `{` and consumes the `}` (the `}` is treated as the
+        // terminator of an empty ref, then the empty ref falls back to the
+        // literal-with-`{` branch). Pinning this exact behaviour so a future
+        // refactor doesn't silently change it.
+        assert_eq!(token_strings("a{}b"), vec!["L:a{b"]);
+    }
+
+    #[test]
+    fn tokenize_handles_adjacent_refs() {
+        assert_eq!(
+            token_strings("{a}{b}"),
+            vec!["R:a", "R:b"],
+        );
+    }
+
+    #[test]
+    fn attr_escape_emits_bold_italic_combinations() {
+        assert_eq!(attr_escape(""), "");
+        assert_eq!(attr_escape("bold"), "\x1b[1m");
+        assert_eq!(attr_escape("italic"), "\x1b[3m");
+        assert_eq!(attr_escape("bold,italic"), "\x1b[1m\x1b[3m");
+        // Whitespace tolerated
+        assert_eq!(attr_escape("bold, italic"), "\x1b[1m\x1b[3m");
+        // Unknown values silently ignored
+        assert_eq!(attr_escape("rainbow"), "");
+    }
+
+    #[test]
+    fn resolve_and_emit_resolves_prev_bg_in_forward_pass() {
+        // [bg=red] [fg=PrevBg, bg=blue] → middle's fg becomes red.
+        let mut spans = vec![
+            Span {
+                text: "X".into(),
+                fg: SpanColor::Concrete(Color::None),
+                bg: SpanColor::Concrete(rgb(255, 0, 0)),
+                attr: String::new(),
+            },
+            Span {
+                text: "Y".into(),
+                fg: SpanColor::PrevBg,
+                bg: SpanColor::Concrete(rgb(0, 0, 255)),
+                attr: String::new(),
+            },
+        ];
+        let _ = resolve_and_emit(&mut spans, &Color::None);
+        match &spans[1].fg {
+            SpanColor::Concrete(Color::Rgb(255, 0, 0)) => (),
+            other => panic!("expected fg=red, got {:?}", color_label(other)),
+        }
+    }
+
+    #[test]
+    fn resolve_and_emit_resolves_next_bg_in_backward_pass() {
+        // [fg=NextBg, bg=red] [bg=blue] → first's fg becomes blue.
+        let mut spans = vec![
+            Span {
+                text: "X".into(),
+                fg: SpanColor::NextBg,
+                bg: SpanColor::Concrete(rgb(255, 0, 0)),
+                attr: String::new(),
+            },
+            Span {
+                text: "Y".into(),
+                fg: SpanColor::Concrete(Color::None),
+                bg: SpanColor::Concrete(rgb(0, 0, 255)),
+                attr: String::new(),
+            },
+        ];
+        let _ = resolve_and_emit(&mut spans, &Color::None);
+        match &spans[0].fg {
+            SpanColor::Concrete(Color::Rgb(0, 0, 255)) => (),
+            other => panic!("expected fg=blue, got {:?}", color_label(other)),
+        }
+    }
+
+    #[test]
+    fn resolve_and_emit_falls_back_to_bar_bg_at_boundaries() {
+        // Single span asking for PrevBg — there's nothing before, so it
+        // must fall back to bar_bg.
+        let bar_bg = rgb(10, 20, 30);
+        let mut spans = vec![Span {
+            text: "X".into(),
+            fg: SpanColor::PrevBg,
+            bg: SpanColor::Concrete(Color::None),
+            attr: String::new(),
+        }];
+        let _ = resolve_and_emit(&mut spans, &bar_bg);
+        match &spans[0].fg {
+            SpanColor::Concrete(Color::Rgb(10, 20, 30)) => (),
+            other => panic!("expected fg=bar_bg, got {:?}", color_label(other)),
+        }
+    }
+
+    #[test]
+    fn resolve_and_emit_skips_empty_text_spans() {
+        // Empty-text spans are anchors used to thread positional colors;
+        // they must not produce any output bytes.
+        let mut spans = vec![
+            lit(""),
+            Span {
+                text: "ok".into(),
+                fg: SpanColor::Concrete(Color::None),
+                bg: SpanColor::Concrete(Color::None),
+                attr: String::new(),
+            },
+            lit(""),
+        ];
+        let out = resolve_and_emit(&mut spans, &Color::None);
+        assert!(out.contains("ok"));
+        // The reset prefix is per non-empty span; one occurrence => one span.
+        assert_eq!(out.matches("\x1b[0m").count(), 1);
+    }
+
+    fn color_label(c: &SpanColor) -> &'static str {
+        match c {
+            SpanColor::Concrete(Color::None) => "Concrete(None)",
+            SpanColor::Concrete(Color::Rgb(_, _, _)) => "Concrete(Rgb)",
+            SpanColor::Concrete(Color::EightBit(_)) => "Concrete(EightBit)",
+            SpanColor::PrevBg => "PrevBg",
+            SpanColor::NextBg => "NextBg",
+        }
+    }
+}
