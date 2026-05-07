@@ -635,17 +635,31 @@ impl ZellijPlugin for State {
                 }
 
                 let base = self.resolve_base_mode();
+                let is_active_clone = self.own_client_id == self.spawned_for_client;
+                // For active clones, react to ModeUpdate immediately to avoid the
+                // mode_sync pipe roundtrip (~50-100 ms perceptible delay).
+                // Non-active clones still wait for mode_sync because their own
+                // ModeUpdate reflects *their* client's mode, not the spawning
+                // client's mode that the HUD/Tooltip is supposed to display.
+                let mut tooltip_active_changed = false;
 
                 match self.role {
                     Role::Hud => {
-                        // self.mode is driven exclusively by mode_sync pipe so that
-                        // all clients see the same globally active mode.
+                        if is_active_clone {
+                            self.mode = new_mode;
+                        }
                     }
                     Role::Tooltip => {
-                        // Mode is driven exclusively by mode_sync pipe.
-                        // ModeUpdate only updates mode_info (done above).
-                        // Resize and render happen in handle_mode_sync_pipe
-                        // so the host can process the resize before rendering.
+                        if is_active_clone && self.mode != new_mode {
+                            self.mode = new_mode;
+                            // Hidden modes will be closed by the Daemon's
+                            // close_tooltip pipe; do not resize/render or the
+                            // user sees a flash at old dimensions.
+                            if !is_tooltip_hidden_mode(new_mode, base) {
+                                self.tooltip_needs_resize = true;
+                                tooltip_active_changed = true;
+                            }
+                        }
                     }
                     Role::Daemon => {
                         self.mode = new_mode;
@@ -677,14 +691,15 @@ impl ZellijPlugin for State {
                 }
 
                 let _ = base;
-                // Tooltip: mode and resize are driven by mode_sync pipe.
-                // Exception: when this ModeUpdate is the one that populated mode_info
-                // for the first time AND self.mode (from spawn config) already matches
-                // new_mode, mode_sync will not trigger a render (mode_changed=false)
-                // and mode_info_sync will be skipped (mode_info already Some). Render
-                // here so the tooltip displays its keybinds.
+                // Tooltip render conditions:
+                // - active clone observed a visible mode change (immediate render
+                //   path); or
+                // - this is the first ModeUpdate after spawn and self.mode (from
+                //   spawn config) already matches new_mode, so mode_sync will not
+                //   trigger a render later (mode_changed=false).
                 if self.role == Role::Tooltip {
-                    return is_initial && self.mode == new_mode;
+                    return tooltip_active_changed
+                        || (is_initial && self.mode == new_mode);
                 }
                 true
             }
