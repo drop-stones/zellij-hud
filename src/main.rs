@@ -250,6 +250,41 @@ impl State {
         }
     }
 
+    /// Move the plugin pane to follow the spawning client's active tab.
+    /// Only the active clone (`own_client_id == spawned_for_client`) acts.
+    ///
+    /// Called from TabUpdate and from PermissionRequestResult: a TabUpdate
+    /// that arrives before permission is granted has to skip the move
+    /// (`break_panes_to_tab_with_index` panics on denial), and we only
+    /// update `active_tab_idx` after a successful move attempt so the
+    /// post-permission call still detects the mismatch and moves the pane.
+    fn follow_active_tab(&mut self) {
+        if !matches!(self.role, Role::Hud | Role::Tooltip) {
+            return;
+        }
+        if !self.has_permission {
+            return;
+        }
+        if self.own_client_id != self.spawned_for_client {
+            return;
+        }
+        let Some(active_tab_index) = self.tabs.iter().position(|t| t.active) else {
+            return;
+        };
+        let new_idx = active_tab_index + 1;
+        if self.active_tab_idx == new_idx {
+            return;
+        }
+        if let Some(id) = self.own_plugin_id {
+            break_panes_to_tab_with_index(
+                &[PaneId::Plugin(id)],
+                new_idx.saturating_sub(1),
+                false,
+            );
+        }
+        self.active_tab_idx = new_idx;
+    }
+
     /// Spawn HUD/Tooltip if the Daemon is in a non-base mode and all required state
     /// (tabs, mode_info) is available.  Returns true if any pane was spawned.
     /// Callers are responsible for broadcasting mode_sync; this method only
@@ -546,6 +581,11 @@ impl ZellijPlugin for State {
                     // Race recovery: ModeUpdate may have arrived before permission
                     // was granted and the spawn was skipped.
                     self.daemon_try_spawn();
+                    // Race recovery: TabUpdate may have arrived before permission
+                    // was granted; the move was skipped and won't be retried unless
+                    // the active tab changes.  Force a follow now using the cached
+                    // tabs so the pane reaches the right tab without waiting.
+                    self.follow_active_tab();
                 }
                 true
             }
@@ -665,29 +705,9 @@ impl ZellijPlugin for State {
                 }
 
                 if self.role == Role::Hud || self.role == Role::Tooltip {
+                    self.follow_active_tab();
+
                     let is_active_clone = self.own_client_id == self.spawned_for_client;
-
-                    if let Some(active_tab_index) =
-                        self.tabs.iter().position(|t| t.active)
-                    {
-                        let new_idx = active_tab_index + 1;
-                        // break_panes_to_tab_with_index requires ChangeApplicationState;
-                        // skip until permission is granted to avoid host-side panic.
-                        if is_active_clone
-                            && self.has_permission
-                            && self.active_tab_idx != new_idx
-                        {
-                            if let Some(id) = self.own_plugin_id {
-                                break_panes_to_tab_with_index(
-                                    &[PaneId::Plugin(id)],
-                                    new_idx.saturating_sub(1),
-                                    false,
-                                );
-                            }
-                        }
-                        self.active_tab_idx = new_idx;
-                    }
-
                     if self.role == Role::Tooltip && is_active_clone && self.has_permission {
                         let base = self.resolve_base_mode();
                         if !is_tooltip_hidden_mode(self.mode, base) {
