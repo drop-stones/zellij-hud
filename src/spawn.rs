@@ -1,13 +1,21 @@
 use zellij_tile::prelude::*;
 
 use crate::tooltip::tooltip_size;
-use crate::{State, CONFIG_IS_HUD, CONFIG_IS_TOOLTIP, CONFIG_SPAWNED_FOR_CLIENT};
+use crate::{State, CONFIG_IS_HUD, CONFIG_IS_TOOLTIP, CONFIG_SPAWNED_FOR_CLIENT, CONFIG_SPAWN_SEQ};
 
 impl State {
+    /// Allocate the next per-spawn sequence number.
+    fn next_seq(&mut self) -> u32 {
+        self.next_spawn_seq = self.next_spawn_seq.wrapping_add(1);
+        self.next_spawn_seq
+    }
+
     pub(crate) fn spawn_hud(&mut self) {
         if self.hud_is_open {
             return;
         }
+        let seq = self.next_seq();
+        self.current_hud_seq = seq;
         let initial_tab = self.tabs.iter().position(|t| t.active).map(|i| i + 1).unwrap_or(1);
         let mut config = self.plugin_config.clone();
         config.insert(CONFIG_IS_HUD.to_string(), "true".to_string());
@@ -15,6 +23,7 @@ impl State {
             CONFIG_SPAWNED_FOR_CLIENT.to_string(),
             self.own_client_id.to_string(),
         );
+        config.insert(CONFIG_SPAWN_SEQ.to_string(), seq.to_string());
         config.insert("initial_tab".to_string(), initial_tab.to_string());
         config.insert("initial_mode".to_string(), format!("{:?}", self.mode));
         config.insert("session_name".to_string(), self.session_name.clone());
@@ -53,6 +62,8 @@ impl State {
             return;
         }
 
+        let seq = self.next_seq();
+        self.current_tooltip_seq = seq;
         let initial_tab = self.tabs.iter().position(|t| t.active).map(|i| i + 1).unwrap_or(1);
         let mut config = self.plugin_config.clone();
         config.insert(CONFIG_IS_TOOLTIP.to_string(), "true".to_string());
@@ -60,6 +71,7 @@ impl State {
             CONFIG_SPAWNED_FOR_CLIENT.to_string(),
             self.own_client_id.to_string(),
         );
+        config.insert(CONFIG_SPAWN_SEQ.to_string(), seq.to_string());
         config.insert("initial_tab".to_string(), initial_tab.to_string());
         config.insert("initial_mode".to_string(), format!("{:?}", self.mode));
         config.insert("session_name".to_string(), self.session_name.clone());
@@ -76,20 +88,21 @@ impl State {
         self.tooltip_is_open = true;
     }
 
-    /// Send a targeted close signal for HUD instances spawned by this client.
-    /// The payload carries own_client_id so only the matching HUD closes.
+    /// Send a targeted close signal for the currently-open HUD instance.
+    /// Payload: "client_id:seq". The seq filter rejects stale messages
+    /// addressed to a previous HUD instance.
     pub(crate) fn close_hud_via_pipe(&self) {
         pipe_message_to_plugin(
             MessageToPlugin::new("close_hud")
-                .with_payload(self.own_client_id.to_string()),
+                .with_payload(format!("{}:{}", self.own_client_id, self.current_hud_seq)),
         );
     }
 
-    /// Send a targeted close signal for Tooltip instances spawned by this client.
+    /// Send a targeted close signal for the currently-open Tooltip instance.
     pub(crate) fn close_tooltip_via_pipe(&self) {
         pipe_message_to_plugin(
             MessageToPlugin::new("close_tooltip")
-                .with_payload(self.own_client_id.to_string()),
+                .with_payload(format!("{}:{}", self.own_client_id, self.current_tooltip_seq)),
         );
     }
 
