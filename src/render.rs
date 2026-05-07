@@ -1,7 +1,8 @@
 use unicode_width::UnicodeWidthChar;
 
-use crate::config::Color;
-use crate::spans::resolve_and_emit;
+use zellij_hud::config::Color;
+use zellij_hud::spans::resolve_and_emit;
+
 use crate::State;
 
 /// Count visible display width of a string, ignoring ANSI escape sequences

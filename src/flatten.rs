@@ -1,0 +1,301 @@
+//! Pass 1 of the rendering pipeline (bin-side): walk the live `State` to
+//! expand format strings and widgets into a flat `Vec<Span>` IR. The pure
+//! span types and tokenizer live in `zellij_hud::spans`; this module is
+//! kept in the bin because every method here reads from `State` and is
+//! therefore not testable in isolation on the host target.
+
+use zellij_hud::config::WidgetStyle;
+use zellij_hud::spans::{
+    resolve_span_color, tokenize, Span, SpanColor, Token, MAX_DEPTH,
+};
+
+use crate::State;
+
+/// Resolved style for a widget: SpanColor for fg/bg plus attr string.
+pub(crate) struct ResolvedStyle {
+    pub(crate) fg: SpanColor,
+    pub(crate) bg: SpanColor,
+    pub(crate) attr: String,
+}
+
+impl State {
+    /// Resolve a WidgetStyle into SpanColors for the current mode.
+    fn resolve_style(&self, style: &WidgetStyle) -> ResolvedStyle {
+        let c = &self.hud_config;
+        ResolvedStyle {
+            fg: resolve_span_color(&style.fg, c, self.mode),
+            bg: resolve_span_color(&style.bg, c, self.mode),
+            attr: style.attr.clone(),
+        }
+    }
+
+    /// Flatten a top-level format string (format_left or format_right) into spans.
+    pub(crate) fn flatten_format(&self, format_str: &str) -> Vec<Span> {
+        let tokens = tokenize(format_str);
+        let mut spans = Vec::new();
+        for token in tokens {
+            match token {
+                Token::Literal(text) => {
+                    // Top-level literal text has no specific style (bar_bg is applied later)
+                    spans.push(Span {
+                        text,
+                        fg: SpanColor::Concrete(zellij_hud::config::Color::None),
+                        bg: SpanColor::Concrete(zellij_hud::config::Color::None),
+                        attr: String::new(),
+                    });
+                }
+                Token::Ref(name) => {
+                    self.flatten_widget(&name, &mut spans, 0);
+                }
+            }
+        }
+        spans
+    }
+
+    /// Flatten a widget reference into spans, appending to `out`.
+    fn flatten_widget(&self, name: &str, out: &mut Vec<Span>, depth: u8) {
+        if depth >= MAX_DEPTH {
+            return;
+        }
+        let c = &self.hud_config;
+
+        match name {
+            "mode" => {
+                let rs = self.resolve_style(&c.mode_style);
+                let mode_text = c
+                    .mode_content
+                    .get(&self.mode)
+                    .cloned()
+                    .unwrap_or_else(|| format!("{:?}", self.mode).to_uppercase());
+                let content = c.mode_format.replace("{content}", &mode_text);
+                self.flatten_format_with_style(&content, &rs, out, depth);
+            }
+            "session" => {
+                let rs = self.resolve_style(&c.session_style);
+                let content = c.session_format.replace("{name}", &self.session_name);
+                self.flatten_format_with_style(&content, &rs, out, depth);
+            }
+            "tabs" => {
+                self.flatten_tabs(out, depth);
+            }
+            "cwd" => {
+                let rs = self.resolve_style(&c.cwd_style);
+                let content = c.cwd_format.replace("{cwd}", &self.format_cwd());
+                self.flatten_format_with_style(&content, &rs, out, depth);
+            }
+            _ => {
+                if self.hud_config.command_widgets.contains_key(name) {
+                    self.flatten_command_widget(name, out, depth);
+                } else if self.hud_config.text_widgets.contains_key(name) {
+                    self.flatten_text_widget(name, out, depth);
+                }
+            }
+        }
+    }
+
+    /// Flatten a format string with a parent style into spans.
+    /// Literal text gets the parent style; widget refs are recursively expanded.
+    fn flatten_format_with_style(
+        &self,
+        format_str: &str,
+        style: &ResolvedStyle,
+        out: &mut Vec<Span>,
+        depth: u8,
+    ) {
+        let tokens = tokenize(format_str);
+        for token in tokens {
+            match token {
+                Token::Literal(text) => {
+                    out.push(Span {
+                        text,
+                        fg: style.fg.clone(),
+                        bg: style.bg.clone(),
+                        attr: style.attr.clone(),
+                    });
+                }
+                Token::Ref(name) => {
+                    self.flatten_widget(&name, out, depth + 1);
+                }
+            }
+        }
+    }
+
+    /// Flatten the tabs widget.
+    /// Emits zero-width bar_bg anchor spans between tabs so that positional
+    /// color refs (prev_bg/next_bg) in tab entry/exit separators resolve
+    /// correctly through the bar background.
+    fn flatten_tabs(&self, out: &mut Vec<Span>, depth: u8) {
+        let c = &self.hud_config;
+        let bar_bg = c.resolve_color_with_accent(&c.bar_bg, &c.palette, self.mode);
+        let anchor = || Span {
+            text: String::new(),
+            fg: SpanColor::Concrete(zellij_hud::config::Color::None),
+            bg: SpanColor::Concrete(bar_bg.clone()),
+            attr: String::new(),
+        };
+
+        for (i, tab) in self.tabs.iter().enumerate() {
+            // Anchor before each tab: represents the bar_bg gap
+            out.push(anchor());
+
+            // Inter-tab separator with configurable style
+            if i > 0 && !c.tab_separator_content.is_empty() {
+                let sep_rs = self.resolve_style(&c.tab_separator_style);
+                out.push(Span {
+                    text: c.tab_separator_content.clone(),
+                    fg: sep_rs.fg,
+                    bg: sep_rs.bg,
+                    attr: sep_rs.attr,
+                });
+                out.push(anchor());
+            }
+
+            let (style_def, tab_format) = if tab.active {
+                (&c.tab_active_style, &c.tab_active_format)
+            } else {
+                (&c.tab_inactive_style, &c.tab_inactive_format)
+            };
+            let tab_rs = self.resolve_style(style_def);
+
+            // Sub-placeholder styles (fallback to tab style)
+            let (idx_style, name_style, sync_style, fs_style) = if tab.active {
+                (
+                    &c.tab_active_index_style,
+                    &c.tab_active_name_style,
+                    &c.tab_active_sync_style,
+                    &c.tab_active_fullscreen_style,
+                )
+            } else {
+                (
+                    &c.tab_inactive_index_style,
+                    &c.tab_inactive_name_style,
+                    &c.tab_inactive_sync_style,
+                    &c.tab_inactive_fullscreen_style,
+                )
+            };
+
+            // Build substitution map: placeholder → (value, format template, optional style)
+            let index_text = (i + 1).to_string();
+            let sync_text = if tab.is_sync_panes_active {
+                c.tab_sync_indicator.clone()
+            } else {
+                String::new()
+            };
+            let fs_text = if tab.is_fullscreen_active {
+                c.tab_fullscreen_indicator.clone()
+            } else {
+                String::new()
+            };
+            let (idx_fmt, name_fmt, sync_fmt, fs_fmt) = if tab.active {
+                (
+                    &c.tab_active_index_format,
+                    &c.tab_active_name_format,
+                    &c.tab_active_sync_format,
+                    &c.tab_active_fullscreen_format,
+                )
+            } else {
+                (
+                    &c.tab_inactive_index_format,
+                    &c.tab_inactive_name_format,
+                    &c.tab_inactive_sync_format,
+                    &c.tab_inactive_fullscreen_format,
+                )
+            };
+            // (placeholder, value, format template, optional style override)
+            let subs: &[(&str, &str, &str, &Option<WidgetStyle>)] = &[
+                ("index", &index_text, idx_fmt, idx_style),
+                ("name", &tab.name, name_fmt, name_style),
+                ("sync_indicator", &sync_text, sync_fmt, sync_style),
+                ("fullscreen_indicator", &fs_text, fs_fmt, fs_style),
+            ];
+
+            // Tokenize the tab format and expand tokens
+            let tokens = tokenize(tab_format);
+            for token in tokens {
+                match token {
+                    Token::Literal(text) => {
+                        out.push(Span {
+                            text,
+                            fg: tab_rs.fg.clone(),
+                            bg: tab_rs.bg.clone(),
+                            attr: tab_rs.attr.clone(),
+                        });
+                    }
+                    Token::Ref(name) => {
+                        // Check if it's a tab sub-placeholder
+                        if let Some((_, value, fmt, style_override)) =
+                            subs.iter().find(|(ph, _, _, _)| *ph == name)
+                        {
+                            if !value.is_empty() {
+                                // Merge sub-placeholder style with parent tab style:
+                                // empty fields in the override inherit from tab_rs.
+                                let rs = match style_override {
+                                    Some(s) => {
+                                        let resolved = self.resolve_style(s);
+                                        ResolvedStyle {
+                                            fg: if s.fg.is_empty() { tab_rs.fg.clone() } else { resolved.fg },
+                                            bg: if s.bg.is_empty() { tab_rs.bg.clone() } else { resolved.bg },
+                                            attr: if s.attr.is_empty() { tab_rs.attr.clone() } else { resolved.attr },
+                                        }
+                                    }
+                                    None => ResolvedStyle {
+                                        fg: tab_rs.fg.clone(),
+                                        bg: tab_rs.bg.clone(),
+                                        attr: tab_rs.attr.clone(),
+                                    },
+                                };
+                                // Apply format template and expand
+                                let formatted = fmt.replace("{content}", value);
+                                self.flatten_format_with_style(
+                                    &formatted, &rs, out, depth,
+                                );
+                            }
+                        } else {
+                            // Regular widget ref (e.g., {ta_in}, {pl_right})
+                            self.flatten_widget(&name, out, depth + 1);
+                        }
+                    }
+                }
+            }
+        }
+        // Anchor after last tab
+        if !self.tabs.is_empty() {
+            out.push(anchor());
+        }
+    }
+
+    /// Flatten a command widget.
+    fn flatten_command_widget(&self, name: &str, out: &mut Vec<Span>, depth: u8) {
+        let widget = match self.hud_config.command_widgets.get(name) {
+            Some(w) => w,
+            None => return,
+        };
+        let output = match self.command_outputs.get(name) {
+            Some(o) => o,
+            None => return,
+        };
+
+        // Hide widget on failure or empty output
+        if output.exit_code != 0 || output.stdout.is_empty() {
+            return;
+        }
+
+        let rs = self.resolve_style(&widget.style);
+        let content = widget
+            .format
+            .replace("{stdout}", &output.stdout)
+            .replace("{exit_code}", &output.exit_code.to_string());
+        self.flatten_format_with_style(&content, &rs, out, depth);
+    }
+
+    /// Flatten a text widget.
+    fn flatten_text_widget(&self, name: &str, out: &mut Vec<Span>, depth: u8) {
+        let widget = match self.hud_config.text_widgets.get(name) {
+            Some(w) => w,
+            None => return,
+        };
+        let rs = self.resolve_style(&widget.style);
+        let content = widget.format.replace("{content}", &widget.content);
+        self.flatten_format_with_style(&content, &rs, out, depth);
+    }
+}

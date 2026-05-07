@@ -1,5 +1,5 @@
+mod flatten;
 pub(crate) mod render;
-mod spans;
 mod spawn;
 mod tooltip;
 

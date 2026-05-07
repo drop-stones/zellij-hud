@@ -10,3 +10,4 @@ pub mod action_types;
 pub mod commands;
 pub mod config;
 pub mod keybinds;
+pub mod spans;
