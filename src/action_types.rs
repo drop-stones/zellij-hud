@@ -518,3 +518,225 @@ fn plugin_display_name(name: &str) -> String {
         name.to_string()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashMap;
+    use zellij_tile::prelude::actions::{Action, SearchDirection, SearchOption};
+
+    /// Every InputMode variant. The trailing match is for exhaustiveness only:
+    /// adding a new InputMode without appending it to the list will fail to
+    /// compile here.
+    fn all_input_modes() -> Vec<InputMode> {
+        let modes = vec![
+            InputMode::Locked, InputMode::Normal, InputMode::Pane, InputMode::Tab,
+            InputMode::Resize, InputMode::Move, InputMode::Scroll, InputMode::Search,
+            InputMode::EnterSearch, InputMode::Session, InputMode::RenameTab,
+            InputMode::RenamePane, InputMode::Tmux, InputMode::Prompt,
+        ];
+        let _exhaustive = |m: InputMode| match m {
+            InputMode::Locked | InputMode::Normal | InputMode::Pane | InputMode::Tab
+            | InputMode::Resize | InputMode::Move | InputMode::Scroll | InputMode::Search
+            | InputMode::EnterSearch | InputMode::Session | InputMode::RenameTab
+            | InputMode::RenamePane | InputMode::Tmux | InputMode::Prompt => (),
+        };
+        modes
+    }
+
+    /// Every ActionType variant (one of each "shape").  The trailing match is
+    /// for exhaustiveness: a new variant added to the enum without being
+    /// appended here will fail to compile.
+    fn all_action_types() -> Vec<ActionType> {
+        let _exhaustive = |a: ActionType| match a {
+            ActionType::SwitchToMode(_) => (),
+            ActionType::MoveFocusLeft | ActionType::MoveFocusDown | ActionType::MoveFocusUp | ActionType::MoveFocusRight => (),
+            ActionType::GoToPreviousTab | ActionType::GoToNextTab | ActionType::ToggleTab => (),
+            ActionType::ScrollDown | ActionType::ScrollUp | ActionType::HalfPageScrollDown | ActionType::HalfPageScrollUp | ActionType::PageScrollDown | ActionType::PageScrollUp => (),
+            ActionType::SearchDown | ActionType::SearchUp | ActionType::SearchToggleCaseSensitivity | ActionType::SearchToggleWrap | ActionType::SearchToggleWholeWord => (),
+            ActionType::NewPaneWithoutDirection | ActionType::NewPaneDown | ActionType::NewPaneRight | ActionType::NewStackedPane | ActionType::NewTab => (),
+            ActionType::MovePaneLeft | ActionType::MovePaneDown | ActionType::MovePaneUp | ActionType::MovePaneRight => (),
+            ActionType::ResizeIncreaseAll | ActionType::ResizeDecreaseAll => (),
+            ActionType::ResizeIncreaseLeft | ActionType::ResizeIncreaseDown | ActionType::ResizeIncreaseUp | ActionType::ResizeIncreaseRight => (),
+            ActionType::ResizeDecreaseLeft | ActionType::ResizeDecreaseDown | ActionType::ResizeDecreaseUp | ActionType::ResizeDecreaseRight => (),
+            ActionType::MoveTabLeft | ActionType::MoveTabRight => (),
+            ActionType::BreakPane | ActionType::BreakPaneLeft | ActionType::BreakPaneRight => (),
+            ActionType::ToggleFocusFullscreen | ActionType::ToggleFloatingPanes | ActionType::TogglePaneEmbedOrFloating | ActionType::ToggleActiveSyncTab => (),
+            ActionType::CloseFocus | ActionType::CloseTab | ActionType::Detach | ActionType::Quit => (),
+            ActionType::EditScrollback => (),
+            ActionType::SessionManager | ActionType::PluginManager | ActionType::Configuration | ActionType::LaunchPlugin(_) => (),
+            ActionType::Other(_) => (),
+        };
+
+        let mut v = Vec::new();
+        for m in all_input_modes() {
+            v.push(ActionType::SwitchToMode(m));
+        }
+        v.extend([
+            ActionType::MoveFocusLeft, ActionType::MoveFocusDown, ActionType::MoveFocusUp, ActionType::MoveFocusRight,
+            ActionType::GoToPreviousTab, ActionType::GoToNextTab, ActionType::ToggleTab,
+            ActionType::ScrollDown, ActionType::ScrollUp,
+            ActionType::HalfPageScrollDown, ActionType::HalfPageScrollUp,
+            ActionType::PageScrollDown, ActionType::PageScrollUp,
+            ActionType::SearchDown, ActionType::SearchUp,
+            ActionType::SearchToggleCaseSensitivity, ActionType::SearchToggleWrap, ActionType::SearchToggleWholeWord,
+            ActionType::NewPaneWithoutDirection, ActionType::NewPaneDown, ActionType::NewPaneRight,
+            ActionType::NewStackedPane, ActionType::NewTab,
+            ActionType::MovePaneLeft, ActionType::MovePaneDown, ActionType::MovePaneUp, ActionType::MovePaneRight,
+            ActionType::ResizeIncreaseAll, ActionType::ResizeDecreaseAll,
+            ActionType::ResizeIncreaseLeft, ActionType::ResizeIncreaseDown, ActionType::ResizeIncreaseUp, ActionType::ResizeIncreaseRight,
+            ActionType::ResizeDecreaseLeft, ActionType::ResizeDecreaseDown, ActionType::ResizeDecreaseUp, ActionType::ResizeDecreaseRight,
+            ActionType::MoveTabLeft, ActionType::MoveTabRight,
+            ActionType::BreakPane, ActionType::BreakPaneLeft, ActionType::BreakPaneRight,
+            ActionType::ToggleFocusFullscreen, ActionType::ToggleFloatingPanes,
+            ActionType::TogglePaneEmbedOrFloating, ActionType::ToggleActiveSyncTab,
+            ActionType::CloseFocus, ActionType::CloseTab, ActionType::Detach, ActionType::Quit,
+            ActionType::EditScrollback,
+            ActionType::SessionManager, ActionType::PluginManager, ActionType::Configuration,
+            ActionType::LaunchPlugin("zellij-loom".into()),
+            ActionType::Other("NoOp".into()),
+        ]);
+        v
+    }
+
+    #[test]
+    fn sort_key_is_unique_for_every_variant() {
+        let mut groups: HashMap<u16, Vec<ActionType>> = HashMap::new();
+        for a in all_action_types() {
+            groups.entry(a.sort_key()).or_default().push(a);
+        }
+        let collisions: Vec<_> = groups
+            .into_iter()
+            .filter(|(_, v)| v.len() > 1)
+            .collect();
+        assert!(
+            collisions.is_empty(),
+            "sort_key collisions found: {:#?}",
+            collisions,
+        );
+    }
+
+    #[test]
+    fn sort_key_buckets_match_their_documented_ranges() {
+        // 0–19: mode switches; 20–39: navigation; 40–49: create;
+        // 50–69: modify/move; 70–79: toggle; 80–89: close/exit;
+        // 90–94: edit; 95–99: plugins; 100+: unknown.
+        let bucket = |k: u16| -> &'static str {
+            match k {
+                0..=19 => "mode_switch",
+                20..=39 => "navigation",
+                40..=49 => "create",
+                50..=69 => "modify_move",
+                70..=79 => "toggle",
+                80..=89 => "close_exit",
+                90..=94 => "edit",
+                95..=99 => "plugins",
+                _ => "unknown",
+            }
+        };
+        for a in all_action_types() {
+            let expected = match &a {
+                ActionType::SwitchToMode(_) => "mode_switch",
+                ActionType::MoveFocusLeft | ActionType::MoveFocusDown | ActionType::MoveFocusUp | ActionType::MoveFocusRight
+                | ActionType::GoToPreviousTab | ActionType::GoToNextTab | ActionType::ToggleTab
+                | ActionType::ScrollDown | ActionType::ScrollUp
+                | ActionType::HalfPageScrollDown | ActionType::HalfPageScrollUp
+                | ActionType::PageScrollDown | ActionType::PageScrollUp
+                | ActionType::SearchDown | ActionType::SearchUp
+                | ActionType::SearchToggleCaseSensitivity | ActionType::SearchToggleWrap | ActionType::SearchToggleWholeWord => "navigation",
+                ActionType::NewPaneWithoutDirection | ActionType::NewPaneDown | ActionType::NewPaneRight
+                | ActionType::NewStackedPane | ActionType::NewTab => "create",
+                ActionType::MovePaneLeft | ActionType::MovePaneDown | ActionType::MovePaneUp | ActionType::MovePaneRight
+                | ActionType::ResizeIncreaseAll | ActionType::ResizeDecreaseAll
+                | ActionType::ResizeIncreaseLeft | ActionType::ResizeIncreaseDown | ActionType::ResizeIncreaseUp | ActionType::ResizeIncreaseRight
+                | ActionType::ResizeDecreaseLeft | ActionType::ResizeDecreaseDown | ActionType::ResizeDecreaseUp | ActionType::ResizeDecreaseRight
+                | ActionType::MoveTabLeft | ActionType::MoveTabRight
+                | ActionType::BreakPane | ActionType::BreakPaneLeft | ActionType::BreakPaneRight => "modify_move",
+                ActionType::ToggleFocusFullscreen | ActionType::ToggleFloatingPanes
+                | ActionType::TogglePaneEmbedOrFloating | ActionType::ToggleActiveSyncTab => "toggle",
+                ActionType::CloseFocus | ActionType::CloseTab | ActionType::Detach | ActionType::Quit => "close_exit",
+                ActionType::EditScrollback => "edit",
+                ActionType::SessionManager | ActionType::PluginManager | ActionType::Configuration
+                | ActionType::LaunchPlugin(_) => "plugins",
+                ActionType::Other(_) => "unknown",
+            };
+            assert_eq!(
+                bucket(a.sort_key()),
+                expected,
+                "{:?} (sort_key={}) fell outside its documented bucket",
+                a,
+                a.sort_key(),
+            );
+        }
+    }
+
+    #[test]
+    fn from_action_classifies_directional_actions() {
+        assert_eq!(
+            ActionType::from_action(&Action::MoveFocus { direction: Direction::Left }),
+            ActionType::MoveFocusLeft,
+        );
+        assert_eq!(
+            ActionType::from_action(&Action::MovePane { direction: Some(Direction::Right) }),
+            ActionType::MovePaneRight,
+        );
+        assert_eq!(
+            ActionType::from_action(&Action::Resize {
+                resize: Resize::Increase,
+                direction: None,
+            }),
+            ActionType::ResizeIncreaseAll,
+        );
+        assert_eq!(
+            ActionType::from_action(&Action::Resize {
+                resize: Resize::Decrease,
+                direction: Some(Direction::Up),
+            }),
+            ActionType::ResizeDecreaseUp,
+        );
+        assert_eq!(
+            ActionType::from_action(&Action::MoveTab { direction: Direction::Right }),
+            ActionType::MoveTabRight,
+        );
+    }
+
+    #[test]
+    fn from_action_classifies_search_and_navigation() {
+        assert_eq!(
+            ActionType::from_action(&Action::Search { direction: SearchDirection::Down }),
+            ActionType::SearchDown,
+        );
+        assert_eq!(
+            ActionType::from_action(&Action::SearchToggleOption {
+                option: SearchOption::CaseSensitivity,
+            }),
+            ActionType::SearchToggleCaseSensitivity,
+        );
+        assert_eq!(ActionType::from_action(&Action::ScrollUp), ActionType::ScrollUp);
+        assert_eq!(ActionType::from_action(&Action::HalfPageScrollDown), ActionType::HalfPageScrollDown);
+        assert_eq!(ActionType::from_action(&Action::GoToPreviousTab), ActionType::GoToPreviousTab);
+    }
+
+    #[test]
+    fn from_action_classifies_mode_switch() {
+        assert_eq!(
+            ActionType::from_action(&Action::SwitchToMode { input_mode: InputMode::Pane }),
+            ActionType::SwitchToMode(InputMode::Pane),
+        );
+    }
+
+    #[test]
+    fn from_action_falls_back_to_other_for_unrecognized() {
+        // NoOp has no dedicated ActionType branch, so it should land in Other(_).
+        let result = ActionType::from_action(&Action::NoOp);
+        assert!(matches!(result, ActionType::Other(_)));
+    }
+
+    #[test]
+    fn plugin_display_name_strips_zellij_prefix_and_capitalizes() {
+        assert_eq!(plugin_display_name("zellij:about"), "About");
+        assert_eq!(plugin_display_name("zellij:share"), "Share");
+        assert_eq!(plugin_display_name("zellij-loom"), "zellij-loom");
+        assert_eq!(plugin_display_name(""), "");
+    }
+}
