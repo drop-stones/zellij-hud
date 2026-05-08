@@ -11,7 +11,9 @@ use std::path::PathBuf;
 use zellij_hud::{action_types, config, keybinds};
 use zellij_hud::commands::{shell_escape, CMD_CONTEXT_USER, CommandOutput};
 use zellij_hud::input_mode::mode_from_str;
-use zellij_hud::pipe::parse_close_payload;
+use zellij_hud::pipe::{
+    parse_client_prefixed, parse_close_payload, parse_cmd_update_payload, parse_mode_sync_payload,
+};
 use zellij_hud::text::visible_len;
 use zellij_hud::tooltip_layout::is_tooltip_hidden_mode;
 
@@ -354,22 +356,14 @@ impl State {
             return false;
         }
 
-        let (id_str, mode_str) = match payload.split_once(':') {
-            Some(pair) => pair,
+        let (client_id, mode) = match parse_mode_sync_payload(payload) {
+            Some(v) => v,
             None => return false,
-        };
-        let client_id: u16 = match id_str.parse() {
-            Ok(id) => id,
-            Err(_) => return false,
         };
         // Only react to the Daemon that spawned us.
         if client_id != self.spawned_for_client {
             return false;
         }
-        let mode = match mode_from_str(mode_str) {
-            Some(m) => m,
-            None => return false,
-        };
 
         let base = self.resolve_base_mode();
         let mode_changed = self.mode != mode;
@@ -740,11 +734,7 @@ impl ZellijPlugin for State {
                     return false;
                 }
                 // Parse "client_id:json" payload.
-                if let Some((id_str, json)) = payload.split_once(':') {
-                    let client_id: u16 = match id_str.parse() {
-                        Ok(id) => id,
-                        Err(_) => return false,
-                    };
+                if let Some((client_id, json)) = parse_client_prefixed(payload) {
                     if client_id != self.spawned_for_client {
                         return false;
                     }
@@ -784,14 +774,12 @@ impl ZellijPlugin for State {
                 if self.role != Role::Hud {
                     return false;
                 }
-                let parts: Vec<&str> = payload.splitn(3, ':').collect();
-                if parts.len() == 3 {
-                    let client_id: u16 = parts[0].parse().unwrap_or(0);
+                if let Some((client_id, name, value)) = parse_cmd_update_payload(payload) {
                     if client_id == self.spawned_for_client {
                         self.command_outputs.insert(
-                            parts[1].to_string(),
+                            name.to_string(),
                             CommandOutput {
-                                stdout: parts[2].to_string(),
+                                stdout: value.to_string(),
                                 exit_code: 0,
                             },
                         );
@@ -805,8 +793,7 @@ impl ZellijPlugin for State {
                 if self.role != Role::Hud {
                     return false;
                 }
-                if let Some((id_str, cwd)) = payload.split_once(':') {
-                    let client_id: u16 = id_str.parse().unwrap_or(0);
+                if let Some((client_id, cwd)) = parse_client_prefixed(payload) {
                     if client_id == self.spawned_for_client {
                         self.cwd = PathBuf::from(cwd);
                         return true;

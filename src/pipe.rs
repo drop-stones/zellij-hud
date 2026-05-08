@@ -4,6 +4,10 @@
 //! using string payloads. These pure parsers live here so the bin-side handlers
 //! stay focused on side effects.
 
+use zellij_tile::prelude::InputMode;
+
+use crate::input_mode::mode_from_str;
+
 /// Parse a `"client_id:seq"` close pipe payload.
 ///
 /// The daemon tags every spawn with the spawning client_id and a per-spawn
@@ -17,6 +21,39 @@ pub fn parse_close_payload(payload: &str) -> Option<(u16, u32)> {
     let cid: u16 = cid_str.parse().ok()?;
     let seq: u32 = seq_str.parse().ok()?;
     Some((cid, seq))
+}
+
+/// Parse a `"client_id:rest"` payload — the common envelope for several pipe
+/// messages (mode_info_sync, cwd_update). Returns the parsed client_id and a
+/// borrowed slice of the remainder, leaving payload-specific parsing to the
+/// caller (e.g. JSON for mode_info_sync, raw path for cwd_update).
+pub fn parse_client_prefixed(payload: &str) -> Option<(u16, &str)> {
+    let (id_str, rest) = payload.split_once(':')?;
+    let cid: u16 = id_str.parse().ok()?;
+    Some((cid, rest))
+}
+
+/// Parse a `"client_id:Mode"` mode_sync pipe payload, where `Mode` is the
+/// `InputMode` Debug name (e.g. `"Normal"`, `"Pane"`).
+///
+/// Returns `None` if the envelope is malformed or the mode name is unknown.
+pub fn parse_mode_sync_payload(payload: &str) -> Option<(u16, InputMode)> {
+    let (cid, mode_str) = parse_client_prefixed(payload)?;
+    let mode = mode_from_str(mode_str)?;
+    Some((cid, mode))
+}
+
+/// Parse a `"client_id:name:value"` cmd_update pipe payload.
+///
+/// `value` is everything after the second `:`, so colons inside the command
+/// output are preserved (`splitn(3, ':')`).
+pub fn parse_cmd_update_payload(payload: &str) -> Option<(u16, &str, &str)> {
+    let mut parts = payload.splitn(3, ':');
+    let cid_str = parts.next()?;
+    let name = parts.next()?;
+    let value = parts.next()?;
+    let cid: u16 = cid_str.parse().ok()?;
+    Some((cid, name, value))
 }
 
 #[cfg(test)]
