@@ -702,3 +702,209 @@ impl Default for HudConfig {
         Self::from_config(&BTreeMap::new())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn cfg<const N: usize>(pairs: [(&str, &str); N]) -> BTreeMap<String, String> {
+        pairs
+            .into_iter()
+            .map(|(k, v)| (k.to_string(), v.to_string()))
+            .collect()
+    }
+
+    #[test]
+    fn default_uses_simple_style_and_system_theme() {
+        // Empty config → simple preset format strings + system theme on.
+        let h = HudConfig::from_config(&BTreeMap::new());
+        assert!(h.use_system_theme);
+        assert!(h.format_left.contains("{mode}"));
+        assert!(h.format_left.contains("{session}"));
+        assert!(h.format_left.contains("{tabs}"));
+        // Default tooltip layout values.
+        assert_eq!(h.tooltip_position, "bottom-right");
+        assert!(h.tooltip_border);
+        assert!(h.enable_status_bar);
+        assert!(h.enable_tooltip);
+    }
+
+    #[test]
+    fn named_theme_disables_system_and_loads_preset_palette() {
+        let h = HudConfig::from_config(&cfg([("theme", "catppuccin-mocha")]));
+        assert!(!h.use_system_theme);
+        // Catppuccin's bg differs from tokyonight's — pin one preset value.
+        assert_eq!(h.palette.bg, "#1e1e2e");
+    }
+
+    #[test]
+    fn unknown_theme_falls_through_to_tokyonight_default() {
+        let h = HudConfig::from_config(&cfg([("theme", "no-such-theme")]));
+        assert!(!h.use_system_theme); // any non-"system" disables system theme
+        assert_eq!(h.palette.bg, "#1a1b26"); // tokyonight bg
+    }
+
+    #[test]
+    fn style_powerline_seeds_format_strings_with_arrow_widgets() {
+        let h = HudConfig::from_config(&cfg([("style", "powerline")]));
+        // Powerline preset's format_left references the s_ms/s_sb arrow widgets.
+        assert!(h.format_left.contains("{s_ms}"));
+        assert!(h.format_left.contains("{s_sb}"));
+        assert!(h.tab_active_format.contains("{ta_in}"));
+    }
+
+    #[test]
+    fn style_minimal_centres_tabs() {
+        let h = HudConfig::from_config(&cfg([("style", "minimal")]));
+        assert_eq!(h.format_center, "{tabs}");
+    }
+
+    #[test]
+    fn palette_overrides_are_applied_on_top_of_named_theme() {
+        let h = HudConfig::from_config(&cfg([
+            ("theme", "tokyonight"),
+            ("palette_blue", "#012345"),
+        ]));
+        assert_eq!(h.palette.blue, "#012345");
+        // Other palette fields are untouched.
+        assert_eq!(h.palette.bg, "#1a1b26");
+    }
+
+    #[test]
+    fn mode_accent_overrides_take_effect_per_mode() {
+        let h = HudConfig::from_config(&cfg([
+            ("mode_accent_normal", "red"),
+            ("mode_accent_pane", "#abcdef"),
+        ]));
+        assert_eq!(
+            h.mode_accent.get(&InputMode::Normal).map(String::as_str),
+            Some("red"),
+        );
+        assert_eq!(
+            h.mode_accent.get(&InputMode::Pane).map(String::as_str),
+            Some("#abcdef"),
+        );
+        // Modes not overridden keep their defaults.
+        assert_eq!(
+            h.mode_accent.get(&InputMode::Tab).map(String::as_str),
+            Some("green"),
+        );
+    }
+
+    #[test]
+    fn enable_flags_are_only_disabled_by_literal_false() {
+        // Per the parser: anything other than the literal "false" leaves the
+        // enable flags on. Pin that so a typo doesn't silently disable.
+        let on = HudConfig::from_config(&cfg([
+            ("enable_status_bar", "true"),
+            ("enable_tooltip", "yes"),
+        ]));
+        assert!(on.enable_status_bar);
+        assert!(on.enable_tooltip);
+
+        let off = HudConfig::from_config(&cfg([
+            ("enable_status_bar", "false"),
+            ("enable_tooltip", "false"),
+        ]));
+        assert!(!off.enable_status_bar);
+        assert!(!off.enable_tooltip);
+    }
+
+    #[test]
+    fn user_command_widget_detected_by_command_suffix() {
+        let h = HudConfig::from_config(&cfg([
+            ("weather_command", "echo sunny"),
+            ("weather_format", " {stdout} "),
+            ("weather_interval", "30"),
+            ("weather_fg", "yellow"),
+        ]));
+        let w = h.command_widgets.get("weather").expect("widget registered");
+        assert_eq!(w.command, "echo sunny");
+        assert_eq!(w.format, " {stdout} ");
+        assert_eq!(w.interval, 30);
+        assert_eq!(w.style.fg, "yellow");
+    }
+
+    #[test]
+    fn user_command_widget_falls_back_to_default_format_and_interval() {
+        let h = HudConfig::from_config(&cfg([("foo_command", "echo hi")]));
+        let w = h.command_widgets.get("foo").unwrap();
+        assert_eq!(w.format, "{stdout}");
+        assert_eq!(w.interval, 10);
+    }
+
+    #[test]
+    fn user_text_widget_detected_by_content_suffix() {
+        let h = HudConfig::from_config(&cfg([
+            ("badge_content", "★"),
+            ("badge_format", "[{content}]"),
+            ("badge_fg", "magenta"),
+        ]));
+        let w = h.text_widgets.get("badge").expect("widget registered");
+        assert_eq!(w.content, "★");
+        assert_eq!(w.format, "[{content}]");
+        assert_eq!(w.style.fg, "magenta");
+    }
+
+    #[test]
+    fn reserved_names_are_not_treated_as_user_widgets() {
+        // `mode_command` / `tabs_content` / etc. would clash with built-ins.
+        // Pin the rejection so a future widget detection rewrite keeps them
+        // out of command_widgets / text_widgets.
+        let h = HudConfig::from_config(&cfg([
+            ("mode_command", "cant register this"),
+            ("tabs_content", "neither this"),
+            ("tooltip_command", "or this"),
+            ("style_content", "or this either"),
+        ]));
+        assert!(h.command_widgets.get("mode").is_none());
+        assert!(h.text_widgets.get("tabs").is_none());
+        assert!(h.command_widgets.get("tooltip").is_none());
+        assert!(h.text_widgets.get("style").is_none());
+    }
+
+    #[test]
+    fn mode_content_keys_are_not_treated_as_text_widgets() {
+        // `mode_content_normal` is per-mode display text, not a `<name>_content`
+        // user widget. Make sure the parser routes those into mode_content
+        // (per InputMode) and not into text_widgets (per name).
+        //
+        // Note: text_widgets is *not* expected to be empty — every style
+        // preset can seed default text widgets (e.g., simple's "sep") — we
+        // only assert the mode_content_* keys don't end up in there.
+        let h = HudConfig::from_config(&cfg([
+            ("mode_content_normal", "NORMAL"),
+            ("mode_content_pane", "PANE"),
+        ]));
+        assert!(h.text_widgets.get("mode_content_normal").is_none());
+        assert!(h.text_widgets.get("mode_content_pane").is_none());
+        assert!(h.text_widgets.get("mode_content").is_none());
+        assert_eq!(
+            h.mode_content.get(&InputMode::Normal).map(String::as_str),
+            Some("NORMAL"),
+        );
+        assert_eq!(
+            h.mode_content.get(&InputMode::Pane).map(String::as_str),
+            Some("PANE"),
+        );
+    }
+
+    #[test]
+    fn tab_format_sets_both_active_and_inactive_as_fallback() {
+        let h = HudConfig::from_config(&cfg([("tab_format", " [{name}] ")]));
+        assert_eq!(h.tab_active_format, " [{name}] ");
+        assert_eq!(h.tab_inactive_format, " [{name}] ");
+    }
+
+    #[test]
+    fn tab_active_and_inactive_format_overrides_take_precedence() {
+        // Specific keys override the tab_format fallback.
+        let h = HudConfig::from_config(&cfg([
+            ("tab_format", " {name} "),
+            ("tab_active_format", "[{name}]"),
+        ]));
+        assert_eq!(h.tab_active_format, "[{name}]");
+        // tab_inactive_format keeps the tab_format fallback.
+        assert_eq!(h.tab_inactive_format, " {name} ");
+    }
+}
