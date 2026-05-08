@@ -98,4 +98,103 @@ mod tests {
         // Negative numbers are rejected because both fields are unsigned.
         assert_eq!(parse_close_payload("-1:0"), None);
     }
+
+    // ---- parse_client_prefixed ----
+
+    #[test]
+    fn parse_client_prefixed_returns_id_and_rest() {
+        assert_eq!(parse_client_prefixed("12:hello"), Some((12, "hello")));
+        // The rest is the entire suffix verbatim — including any further colons.
+        assert_eq!(
+            parse_client_prefixed("7:{\"key\":\"value\"}"),
+            Some((7, "{\"key\":\"value\"}")),
+        );
+        // Empty rest is allowed (an empty path / empty JSON would fall through
+        // to the caller's own validation).
+        assert_eq!(parse_client_prefixed("42:"), Some((42, "")));
+    }
+
+    #[test]
+    fn parse_client_prefixed_rejects_malformed_envelope() {
+        assert_eq!(parse_client_prefixed(""), None);
+        assert_eq!(parse_client_prefixed("noseparator"), None);
+        assert_eq!(parse_client_prefixed("abc:rest"), None);
+        assert_eq!(parse_client_prefixed("65536:rest"), None); // > u16::MAX
+        assert_eq!(parse_client_prefixed(":rest"), None);
+    }
+
+    // ---- parse_mode_sync_payload ----
+
+    #[test]
+    fn parse_mode_sync_payload_accepts_supported_modes() {
+        assert_eq!(
+            parse_mode_sync_payload("3:Normal"),
+            Some((3, InputMode::Normal)),
+        );
+        assert_eq!(
+            parse_mode_sync_payload("0:Pane"),
+            Some((0, InputMode::Pane)),
+        );
+        assert_eq!(
+            parse_mode_sync_payload("65535:Tmux"),
+            Some((65535, InputMode::Tmux)),
+        );
+    }
+
+    #[test]
+    fn parse_mode_sync_payload_rejects_unknown_mode_name() {
+        // Bridges to mode_from_str: unknown names → None for the whole parse.
+        assert_eq!(parse_mode_sync_payload("1:NotAMode"), None);
+        assert_eq!(parse_mode_sync_payload("1:normal"), None); // case-sensitive
+    }
+
+    #[test]
+    fn parse_mode_sync_payload_rejects_malformed_envelope() {
+        assert_eq!(parse_mode_sync_payload(""), None);
+        assert_eq!(parse_mode_sync_payload("Normal"), None); // missing client_id
+        assert_eq!(parse_mode_sync_payload("abc:Normal"), None);
+    }
+
+    // ---- parse_cmd_update_payload ----
+
+    #[test]
+    fn parse_cmd_update_payload_returns_three_parts() {
+        assert_eq!(
+            parse_cmd_update_payload("12:git_branch:main"),
+            Some((12, "git_branch", "main")),
+        );
+    }
+
+    #[test]
+    fn parse_cmd_update_payload_preserves_colons_in_value() {
+        // Colons inside the command output (e.g., "12:34" timestamps) must
+        // stay intact because the parser uses `splitn(3, ':')`. Pin that.
+        assert_eq!(
+            parse_cmd_update_payload("1:time:12:34:56"),
+            Some((1, "time", "12:34:56")),
+        );
+    }
+
+    #[test]
+    fn parse_cmd_update_payload_allows_empty_value() {
+        // Some widgets may emit an empty stdout; the envelope must still
+        // round-trip rather than silently dropping the message.
+        assert_eq!(
+            parse_cmd_update_payload("5:weather:"),
+            Some((5, "weather", "")),
+        );
+    }
+
+    #[test]
+    fn parse_cmd_update_payload_rejects_too_few_parts() {
+        assert_eq!(parse_cmd_update_payload(""), None);
+        assert_eq!(parse_cmd_update_payload("12"), None);
+        assert_eq!(parse_cmd_update_payload("12:name"), None);
+    }
+
+    #[test]
+    fn parse_cmd_update_payload_rejects_non_numeric_client_id() {
+        assert_eq!(parse_cmd_update_payload("abc:foo:bar"), None);
+        assert_eq!(parse_cmd_update_payload("65536:foo:bar"), None);
+    }
 }
