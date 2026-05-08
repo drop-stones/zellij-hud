@@ -241,4 +241,50 @@ mod tests {
         let mi = ModeInfo::default();
         assert_eq!(tooltip_size(&mi, InputMode::Normal, true), (0, 0));
     }
+
+    // ---- is_tooltip_hidden_mode ----
+
+    #[test]
+    fn is_tooltip_hidden_mode_hides_when_in_base_mode() {
+        // Base mode varies per user (auto-detected from keybinds), so the
+        // function is parameterised — anything that equals the base mode hides.
+        assert!(is_tooltip_hidden_mode(InputMode::Normal, InputMode::Normal));
+        assert!(is_tooltip_hidden_mode(InputMode::Locked, InputMode::Locked));
+    }
+
+    #[test]
+    fn is_tooltip_hidden_mode_hides_text_input_modes_regardless_of_base() {
+        // Tooltip would obscure the user's typing target in these modes.
+        for text_mode in [
+            InputMode::RenamePane,
+            InputMode::RenameTab,
+            InputMode::EnterSearch,
+        ] {
+            assert!(
+                is_tooltip_hidden_mode(text_mode, InputMode::Normal),
+                "expected {text_mode:?} to be hidden",
+            );
+        }
+    }
+
+    #[test]
+    fn is_tooltip_hidden_mode_shows_normal_modes() {
+        // Action modes show the tooltip when they're not the base.
+        for mode in [
+            InputMode::Pane,
+            InputMode::Tab,
+            InputMode::Resize,
+            InputMode::Move,
+            InputMode::Scroll,
+            InputMode::Search,
+            InputMode::Session,
+            InputMode::Prompt,
+            InputMode::Tmux,
+        ] {
+            assert!(
+                !is_tooltip_hidden_mode(mode, InputMode::Normal),
+                "expected {mode:?} to be visible",
+            );
+        }
+    }
 }
