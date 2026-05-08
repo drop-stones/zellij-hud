@@ -11,6 +11,7 @@ use std::path::PathBuf;
 use zellij_hud::{action_types, config, keybinds};
 use zellij_hud::commands::{shell_escape, CMD_CONTEXT_USER, CommandOutput};
 use zellij_hud::input_mode::mode_from_str;
+use zellij_hud::decisions::decide_mode_sync;
 use zellij_hud::pipe::{
     parse_client_prefixed, parse_close_payload, parse_cmd_update_payload, parse_mode_sync_payload,
 };
@@ -367,27 +368,19 @@ impl State {
         }
 
         let base = self.resolve_base_mode();
-        let mode_changed = self.mode != mode;
-        // Skip self.mode update when transitioning to base mode: the Daemon's
-        // close_{hud,tooltip} pipe will close this instance shortly, and
-        // rendering base-mode content before the close causes a flash.
-        if mode_changed && mode != base {
-            self.mode = mode;
+        let decision = decide_mode_sync(
+            self.role == Role::Tooltip,
+            self.mode,
+            mode,
+            base,
+        );
+        if let Some(m) = decision.new_self_mode {
+            self.mode = m;
         }
-        if self.role == Role::Tooltip {
-            // Hidden modes: skip render (Daemon's close_tooltip pipe will close
-            // this instance shortly). Avoid a "Normal" flash at old dimensions.
-            if is_tooltip_hidden_mode(mode, base) {
-                return false;
-            }
-            if mode_changed {
-                self.tooltip_needs_resize = true;
-            }
-            return mode_changed;
+        if decision.tooltip_needs_resize {
+            self.tooltip_needs_resize = true;
         }
-        // HUD: render on mode change, except when transitioning to base mode
-        // (avoid a "LOCKED" flash before close).
-        mode_changed && mode != base
+        decision.should_render
     }
 }
 

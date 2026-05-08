@@ -9,6 +9,7 @@
 pub mod action_types;
 pub mod commands;
 pub mod config;
+pub mod decisions;
 pub mod input_mode;
 pub mod keybinds;
 pub mod pipe;
