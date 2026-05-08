@@ -287,4 +287,194 @@ mod tests {
         assert_eq!(d.new_self_mode, Some(InputMode::RenamePane));
         assert!(d.should_render);
     }
+
+    // -----------------------------------------------------------------------
+    // decide_mode_update
+    // -----------------------------------------------------------------------
+
+    /// Helper: build a ModeUpdate decision for the common parameters most
+    /// tests care about. Tests that need a non-default value override it on
+    /// the returned struct via the `with_*` setters or call the function
+    /// directly with the explicit args.
+    fn mu(
+        role: Role,
+        new: InputMode,
+        base: InputMode,
+        current: InputMode,
+        active: bool,
+        perm: bool,
+        hud_open: bool,
+        tt_open: bool,
+        is_initial: bool,
+    ) -> ModeUpdateDecision {
+        decide_mode_update(role, new, base, current, active, perm, hud_open, tt_open, is_initial)
+    }
+
+    // ---- Hud ----
+
+    #[test]
+    fn modeupdate_hud_active_clone_updates_self_and_renders() {
+        let d = mu(Role::Hud, InputMode::Pane, InputMode::Normal,
+                   InputMode::Normal, true, true, false, false, false);
+        assert_eq!(d.new_self_mode, Some(InputMode::Pane));
+        assert!(d.should_render);
+        // HUD never triggers Daemon-only side effects.
+        assert!(!d.close_hud);
+        assert!(!d.close_tooltip);
+        assert!(!d.daemon_try_spawn);
+        assert!(!d.broadcast_mode_sync);
+    }
+
+    #[test]
+    fn modeupdate_hud_active_clone_skips_update_and_render_on_base_transition() {
+        // Avoid a "Normal" flash before the daemon's close_hud pipe arrives.
+        let d = mu(Role::Hud, InputMode::Normal, InputMode::Normal,
+                   InputMode::Pane, true, true, false, false, false);
+        assert_eq!(d.new_self_mode, None);
+        assert!(!d.should_render);
+    }
+
+    #[test]
+    fn modeupdate_hud_non_active_clone_skips_update_but_still_renders() {
+        // Non-active HUD clones don't react to their own ModeUpdate (they
+        // wait for mode_sync), but the render itself isn't suppressed —
+        // mode_sync's render arrives later anyway.
+        let d = mu(Role::Hud, InputMode::Pane, InputMode::Normal,
+                   InputMode::Normal, false, true, false, false, false);
+        assert_eq!(d.new_self_mode, None);
+        assert!(d.should_render);
+    }
+
+    // ---- Tooltip ----
+
+    #[test]
+    fn modeupdate_tooltip_active_clone_updates_resizes_and_renders() {
+        let d = mu(Role::Tooltip, InputMode::Pane, InputMode::Normal,
+                   InputMode::Normal, true, true, false, false, false);
+        assert_eq!(d.new_self_mode, Some(InputMode::Pane));
+        assert!(d.tooltip_needs_resize);
+        assert!(d.should_render);
+    }
+
+    #[test]
+    fn modeupdate_tooltip_unchanged_mode_is_no_op() {
+        // current == new on an active clone → no mutation, no render.
+        let d = mu(Role::Tooltip, InputMode::Pane, InputMode::Normal,
+                   InputMode::Pane, true, true, false, false, false);
+        assert_eq!(d.new_self_mode, None);
+        assert!(!d.tooltip_needs_resize);
+        assert!(!d.should_render);
+    }
+
+    #[test]
+    fn modeupdate_tooltip_hidden_mode_updates_but_skips_resize_and_render() {
+        // Hidden modes (rename/enter_search): record the mode but skip
+        // the resize+render so we don't flash old dimensions.
+        let d = mu(Role::Tooltip, InputMode::RenamePane, InputMode::Normal,
+                   InputMode::Pane, true, true, false, false, false);
+        assert_eq!(d.new_self_mode, Some(InputMode::RenamePane));
+        assert!(!d.tooltip_needs_resize);
+        assert!(!d.should_render);
+    }
+
+    #[test]
+    fn modeupdate_tooltip_initial_renders_once_when_mode_already_matches() {
+        // Spawn config seeded self.mode = new_mode, so mode_sync will fire
+        // mode_changed=false later and not render. We render once here.
+        let d = mu(Role::Tooltip, InputMode::Pane, InputMode::Normal,
+                   InputMode::Pane, true, true, false, false, true);
+        assert_eq!(d.new_self_mode, None);
+        assert!(d.should_render);
+    }
+
+    #[test]
+    fn modeupdate_tooltip_non_active_clone_skips_unless_initial_match() {
+        // Non-active clones: skip the immediate-render path. Without
+        // is_initial they don't render; with is_initial && self.mode
+        // already == new_mode, render once.
+        let d = mu(Role::Tooltip, InputMode::Pane, InputMode::Normal,
+                   InputMode::Tab, false, true, false, false, false);
+        assert!(!d.should_render);
+
+        let d = mu(Role::Tooltip, InputMode::Pane, InputMode::Normal,
+                   InputMode::Pane, false, true, false, false, true);
+        assert!(d.should_render);
+    }
+
+    // ---- Daemon ----
+
+    #[test]
+    fn modeupdate_daemon_always_updates_self_mode() {
+        // Even pre-permission, the daemon tracks the latest mode so it
+        // can act once permission is granted.
+        let d = mu(Role::Daemon, InputMode::Pane, InputMode::Normal,
+                   InputMode::Normal, true, false, false, false, false);
+        assert_eq!(d.new_self_mode, Some(InputMode::Pane));
+        // Pre-permission: no lifecycle side effects yet.
+        assert!(!d.close_hud);
+        assert!(!d.close_tooltip);
+        assert!(!d.daemon_try_spawn);
+        assert!(!d.broadcast_mode_sync);
+    }
+
+    #[test]
+    fn modeupdate_daemon_with_permission_in_non_base_mode_spawns_and_broadcasts() {
+        let d = mu(Role::Daemon, InputMode::Pane, InputMode::Normal,
+                   InputMode::Normal, true, true, false, false, false);
+        assert!(d.daemon_try_spawn);
+        assert!(d.broadcast_mode_sync);
+        assert!(!d.close_hud);
+        assert!(!d.close_tooltip);
+    }
+
+    #[test]
+    fn modeupdate_daemon_returning_to_base_closes_open_panes() {
+        let d = mu(Role::Daemon, InputMode::Normal, InputMode::Normal,
+                   InputMode::Pane, true, true, /*hud_open=*/true, /*tt_open=*/true, false);
+        assert!(d.close_hud);
+        assert!(d.close_tooltip);
+        assert!(!d.daemon_try_spawn);
+        assert!(d.broadcast_mode_sync);
+    }
+
+    #[test]
+    fn modeupdate_daemon_returning_to_base_skips_close_when_not_open() {
+        // close_* is gated on the corresponding *_open flag — no spurious
+        // close pipes when there's nothing to close.
+        let d = mu(Role::Daemon, InputMode::Normal, InputMode::Normal,
+                   InputMode::Pane, true, true, /*hud_open=*/false, /*tt_open=*/false, false);
+        assert!(!d.close_hud);
+        assert!(!d.close_tooltip);
+    }
+
+    #[test]
+    fn modeupdate_daemon_hidden_mode_closes_only_open_tooltip() {
+        // RenamePane / RenameTab / EnterSearch: keep the HUD up, close
+        // the tooltip so its keybinding hints don't obscure the typing
+        // target.
+        let d = mu(Role::Daemon, InputMode::RenamePane, InputMode::Normal,
+                   InputMode::Pane, true, true, /*hud_open=*/true, /*tt_open=*/true, false);
+        assert!(!d.close_hud);
+        assert!(d.close_tooltip);
+        // Still in non-base: spawn path runs.
+        assert!(d.daemon_try_spawn);
+    }
+
+    #[test]
+    fn modeupdate_daemon_hidden_mode_skips_close_when_tooltip_already_closed() {
+        // Same as above but tooltip is already closed → no spurious pipe.
+        let d = mu(Role::Daemon, InputMode::RenamePane, InputMode::Normal,
+                   InputMode::Pane, true, true, true, /*tt_open=*/false, false);
+        assert!(!d.close_tooltip);
+    }
+
+    #[test]
+    fn modeupdate_daemon_always_renders() {
+        // Daemon's render() is a no-op (it's the hidden role), but the
+        // return value is still true so zellij records the event. Pin
+        // that contract.
+        let d = mu(Role::Daemon, InputMode::Pane, InputMode::Normal,
+                   InputMode::Pane, true, true, false, false, false);
+        assert!(d.should_render);
+    }
 }
