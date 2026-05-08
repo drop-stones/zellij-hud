@@ -12,3 +12,4 @@ pub mod config;
 pub mod keybinds;
 pub mod spans;
 pub mod text;
+pub mod tooltip_layout;
