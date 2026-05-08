@@ -168,3 +168,115 @@ impl Default for ThemePalette {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn each_palette_field(p: &ThemePalette) -> [(&'static str, &str); 12] {
+        [
+            ("fg", &p.fg),
+            ("bg", &p.bg),
+            ("dim", &p.dim),
+            ("surface", &p.surface),
+            ("surface_bright", &p.surface_bright),
+            ("red", &p.red),
+            ("green", &p.green),
+            ("yellow", &p.yellow),
+            ("blue", &p.blue),
+            ("magenta", &p.magenta),
+            ("cyan", &p.cyan),
+            ("orange", &p.orange),
+        ]
+    }
+
+    #[test]
+    fn default_palette_is_tokyonight() {
+        // The Default impl is the canonical fallback for unknown theme names
+        // and must match tokyonight literally.
+        let p = ThemePalette::default();
+        assert_eq!(p.fg, "#c0caf5");
+        assert_eq!(p.bg, "#1a1b26");
+        assert_eq!(p.blue, "#7aa2f7");
+        assert_eq!(p.cyan, "#2ac3de");
+    }
+
+    #[test]
+    fn from_name_returns_each_preset() {
+        // Every preset must populate every field with a parseable hex value.
+        for name in ["catppuccin-mocha", "nord", "gruvbox-dark"] {
+            let p = ThemePalette::from_name(name);
+            for (field, value) in each_palette_field(&p) {
+                assert!(
+                    value.starts_with('#') && value.len() == 7,
+                    "preset {name} field {field} = {value:?} is not #rrggbb",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn from_name_falls_back_to_tokyonight_for_unknown() {
+        // Per the doc comment, anything not in the preset list maps to the
+        // tokyonight Default. Pin that contract.
+        let unknown = ThemePalette::from_name("does-not-exist");
+        let default = ThemePalette::default();
+        assert_eq!(unknown.fg, default.fg);
+        assert_eq!(unknown.bg, default.bg);
+        assert_eq!(unknown.surface_bright, default.surface_bright);
+    }
+
+    #[test]
+    fn from_name_presets_differ_meaningfully() {
+        // Sanity check that we're not accidentally returning the same palette
+        // for different preset names.
+        let cat = ThemePalette::from_name("catppuccin-mocha");
+        let nord = ThemePalette::from_name("nord");
+        let gruvbox = ThemePalette::from_name("gruvbox-dark");
+        assert_ne!(cat.bg, nord.bg);
+        assert_ne!(nord.bg, gruvbox.bg);
+        assert_ne!(cat.bg, gruvbox.bg);
+    }
+
+    #[test]
+    fn apply_overrides_replaces_only_keys_present_in_config() {
+        let mut p = ThemePalette::default();
+        let original_bg = p.bg.clone();
+        let mut config = BTreeMap::new();
+        config.insert("palette_fg".to_string(), "#aabbcc".to_string());
+        config.insert("palette_blue".to_string(), "#001122".to_string());
+        p.apply_overrides(&config);
+        assert_eq!(p.fg, "#aabbcc");
+        assert_eq!(p.blue, "#001122");
+        // Untouched fields keep their original values.
+        assert_eq!(p.bg, original_bg);
+    }
+
+    #[test]
+    fn apply_overrides_ignores_unknown_keys() {
+        let mut p = ThemePalette::default();
+        let original = p.fg.clone();
+        let mut config = BTreeMap::new();
+        config.insert("palette_unknown_color".to_string(), "#ffffff".to_string());
+        config.insert("not_a_palette_key".to_string(), "#000000".to_string());
+        p.apply_overrides(&config);
+        assert_eq!(p.fg, original);
+    }
+
+    #[test]
+    fn resolve_returns_each_palette_color_by_name() {
+        let p = ThemePalette::default();
+        for (name, expected) in each_palette_field(&p) {
+            assert_eq!(p.resolve(name), Some(expected), "lookup {name}");
+        }
+    }
+
+    #[test]
+    fn resolve_returns_none_for_unknown_names() {
+        let p = ThemePalette::default();
+        assert_eq!(p.resolve(""), None);
+        assert_eq!(p.resolve("FG"), None); // case-sensitive
+        assert_eq!(p.resolve("accent"), None); // accent is mode-dependent, not a palette field
+        assert_eq!(p.resolve("rainbow"), None);
+    }
+}
