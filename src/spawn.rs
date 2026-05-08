@@ -1,6 +1,6 @@
 use zellij_tile::prelude::*;
 
-use crate::tooltip::tooltip_size;
+use zellij_hud::tooltip_layout::tooltip_size;
 use crate::{State, CONFIG_IS_HUD, CONFIG_IS_TOOLTIP, CONFIG_SPAWNED_FOR_CLIENT, CONFIG_SPAWN_SEQ};
 
 impl State {

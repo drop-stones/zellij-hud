@@ -1,18 +1,18 @@
 //! Two-pass rendering pipeline for the HUD status bar.
 //!
-//! Pass 1 (flatten): Recursively expand format strings and widgets into a flat
-//! `Vec<Span>` intermediate representation. Each `Span` carries its text and
-//! style, with colors either fully resolved or marked as positional references
+//! Pass 1 (flatten — bin-side, see `crate::flatten`): expand format strings
+//! and widgets into a flat `Vec<Span>` IR. Each `Span` carries its text and
+//! style, with colors either fully resolved or marked as positional refs
 //! (`PrevBg` / `NextBg`).
 //!
-//! Pass 2 (resolve + emit): Walk the span list to resolve positional color
-//! references, then emit the final ANSI-escaped string.
+//! Pass 2 (resolve + emit — this module): walk the span list to resolve
+//! positional color references, then emit the final ANSI-escaped string.
 
-use crate::config::{Color, WidgetStyle};
-use crate::State;
+use crate::config::{Color, HudConfig};
+use zellij_tile::prelude::InputMode;
 
 /// Maximum recursion depth for widget references in format templates.
-const MAX_DEPTH: u8 = 5;
+pub const MAX_DEPTH: u8 = 5;
 
 // ---------------------------------------------------------------------------
 // IR types
@@ -20,7 +20,7 @@ const MAX_DEPTH: u8 = 5;
 
 /// A color that is either resolved or a positional reference.
 #[derive(Clone)]
-pub(crate) enum SpanColor {
+pub enum SpanColor {
     /// Fully resolved color (may be Color::None for "no color").
     Concrete(Color),
     /// The background color of the preceding span.
@@ -31,11 +31,11 @@ pub(crate) enum SpanColor {
 
 /// A styled text fragment — the atomic unit of the intermediate representation.
 #[derive(Clone)]
-pub(crate) struct Span {
-    pub(crate) text: String,
-    pub(crate) fg: SpanColor,
-    pub(crate) bg: SpanColor,
-    pub(crate) attr: String,
+pub struct Span {
+    pub text: String,
+    pub fg: SpanColor,
+    pub bg: SpanColor,
+    pub attr: String,
 }
 
 // ---------------------------------------------------------------------------
@@ -43,21 +43,25 @@ pub(crate) struct Span {
 // ---------------------------------------------------------------------------
 
 /// A token from a format string: either literal text or a `{widget_ref}`.
-enum Token {
+pub enum Token {
     Literal(String),
-    Ref(String), // widget name without braces
+    Ref(String),
 }
 
 /// Tokenize a format string into literal and widget-ref tokens.
-/// Example: `" hello {name} world "` → [Literal(" hello "), Ref("name"), Literal(" world ")]
-fn tokenize(format_str: &str) -> Vec<Token> {
+///
+/// Example: `" hello {name} world "` →
+/// `[Literal(" hello "), Ref("name"), Literal(" world ")]`.
+///
+/// Unclosed `{` or empty `{}` are kept as literal text to avoid silently
+/// dropping user input.
+pub fn tokenize(format_str: &str) -> Vec<Token> {
     let mut tokens = Vec::new();
     let mut literal = String::new();
     let mut chars = format_str.chars().peekable();
 
     while let Some(ch) = chars.next() {
         if ch == '{' {
-            // Collect widget ref name
             let mut name = String::new();
             let mut closed = false;
             for inner in chars.by_ref() {
@@ -73,7 +77,6 @@ fn tokenize(format_str: &str) -> Vec<Token> {
                 }
                 tokens.push(Token::Ref(name));
             } else {
-                // Unclosed brace or empty ref — keep as literal text
                 literal.push('{');
                 literal.push_str(&name);
             }
@@ -88,304 +91,11 @@ fn tokenize(format_str: &str) -> Vec<Token> {
 }
 
 // ---------------------------------------------------------------------------
-// Pass 1: Flatten
-// ---------------------------------------------------------------------------
-
-/// Resolved style for a widget: SpanColor for fg/bg plus attr string.
-struct ResolvedStyle {
-    fg: SpanColor,
-    bg: SpanColor,
-    attr: String,
-}
-
-impl State {
-    /// Resolve a WidgetStyle into SpanColors for the current mode.
-    fn resolve_style(&self, style: &WidgetStyle) -> ResolvedStyle {
-        let c = &self.hud_config;
-        ResolvedStyle {
-            fg: resolve_span_color(&style.fg, c, self.mode),
-            bg: resolve_span_color(&style.bg, c, self.mode),
-            attr: style.attr.clone(),
-        }
-    }
-
-    /// Flatten a top-level format string (format_left or format_right) into spans.
-    pub(crate) fn flatten_format(&self, format_str: &str) -> Vec<Span> {
-        let tokens = tokenize(format_str);
-        let mut spans = Vec::new();
-        for token in tokens {
-            match token {
-                Token::Literal(text) => {
-                    // Top-level literal text has no specific style (bar_bg is applied later)
-                    spans.push(Span {
-                        text,
-                        fg: SpanColor::Concrete(Color::None),
-                        bg: SpanColor::Concrete(Color::None),
-                        attr: String::new(),
-                    });
-                }
-                Token::Ref(name) => {
-                    self.flatten_widget(&name, &mut spans, 0);
-                }
-            }
-        }
-        spans
-    }
-
-    /// Flatten a widget reference into spans, appending to `out`.
-    fn flatten_widget(&self, name: &str, out: &mut Vec<Span>, depth: u8) {
-        if depth >= MAX_DEPTH {
-            return;
-        }
-        let c = &self.hud_config;
-
-        match name {
-            "mode" => {
-                let rs = self.resolve_style(&c.mode_style);
-                let mode_text = c
-                    .mode_content
-                    .get(&self.mode)
-                    .cloned()
-                    .unwrap_or_else(|| format!("{:?}", self.mode).to_uppercase());
-                let content = c.mode_format.replace("{content}", &mode_text);
-                self.flatten_format_with_style(&content, &rs, out, depth);
-            }
-            "session" => {
-                let rs = self.resolve_style(&c.session_style);
-                let content = c.session_format.replace("{name}", &self.session_name);
-                self.flatten_format_with_style(&content, &rs, out, depth);
-            }
-            "tabs" => {
-                self.flatten_tabs(out, depth);
-            }
-            "cwd" => {
-                let rs = self.resolve_style(&c.cwd_style);
-                let content = c.cwd_format.replace("{cwd}", &self.format_cwd());
-                self.flatten_format_with_style(&content, &rs, out, depth);
-            }
-            _ => {
-                if self.hud_config.command_widgets.contains_key(name) {
-                    self.flatten_command_widget(name, out, depth);
-                } else if self.hud_config.text_widgets.contains_key(name) {
-                    self.flatten_text_widget(name, out, depth);
-                }
-            }
-        }
-    }
-
-    /// Flatten a format string with a parent style into spans.
-    /// Literal text gets the parent style; widget refs are recursively expanded.
-    fn flatten_format_with_style(
-        &self,
-        format_str: &str,
-        style: &ResolvedStyle,
-        out: &mut Vec<Span>,
-        depth: u8,
-    ) {
-        let tokens = tokenize(format_str);
-        for token in tokens {
-            match token {
-                Token::Literal(text) => {
-                    out.push(Span {
-                        text,
-                        fg: style.fg.clone(),
-                        bg: style.bg.clone(),
-                        attr: style.attr.clone(),
-                    });
-                }
-                Token::Ref(name) => {
-                    self.flatten_widget(&name, out, depth + 1);
-                }
-            }
-        }
-    }
-
-    /// Flatten the tabs widget.
-    /// Emits zero-width bar_bg anchor spans between tabs so that positional
-    /// color refs (prev_bg/next_bg) in tab entry/exit separators resolve
-    /// correctly through the bar background.
-    fn flatten_tabs(&self, out: &mut Vec<Span>, depth: u8) {
-        let c = &self.hud_config;
-        let bar_bg = c.resolve_color_with_accent(&c.bar_bg, &c.palette, self.mode);
-        let anchor = || Span {
-            text: String::new(),
-            fg: SpanColor::Concrete(Color::None),
-            bg: SpanColor::Concrete(bar_bg.clone()),
-            attr: String::new(),
-        };
-
-        for (i, tab) in self.tabs.iter().enumerate() {
-            // Anchor before each tab: represents the bar_bg gap
-            out.push(anchor());
-
-            // Inter-tab separator with configurable style
-            if i > 0 && !c.tab_separator_content.is_empty() {
-                let sep_rs = self.resolve_style(&c.tab_separator_style);
-                out.push(Span {
-                    text: c.tab_separator_content.clone(),
-                    fg: sep_rs.fg,
-                    bg: sep_rs.bg,
-                    attr: sep_rs.attr,
-                });
-                out.push(anchor());
-            }
-
-            let (style_def, tab_format) = if tab.active {
-                (&c.tab_active_style, &c.tab_active_format)
-            } else {
-                (&c.tab_inactive_style, &c.tab_inactive_format)
-            };
-            let tab_rs = self.resolve_style(style_def);
-
-            // Sub-placeholder styles (fallback to tab style)
-            let (idx_style, name_style, sync_style, fs_style) = if tab.active {
-                (
-                    &c.tab_active_index_style,
-                    &c.tab_active_name_style,
-                    &c.tab_active_sync_style,
-                    &c.tab_active_fullscreen_style,
-                )
-            } else {
-                (
-                    &c.tab_inactive_index_style,
-                    &c.tab_inactive_name_style,
-                    &c.tab_inactive_sync_style,
-                    &c.tab_inactive_fullscreen_style,
-                )
-            };
-
-            // Build substitution map: placeholder → (value, format template, optional style)
-            let index_text = (i + 1).to_string();
-            let sync_text = if tab.is_sync_panes_active {
-                c.tab_sync_indicator.clone()
-            } else {
-                String::new()
-            };
-            let fs_text = if tab.is_fullscreen_active {
-                c.tab_fullscreen_indicator.clone()
-            } else {
-                String::new()
-            };
-            let (idx_fmt, name_fmt, sync_fmt, fs_fmt) = if tab.active {
-                (
-                    &c.tab_active_index_format,
-                    &c.tab_active_name_format,
-                    &c.tab_active_sync_format,
-                    &c.tab_active_fullscreen_format,
-                )
-            } else {
-                (
-                    &c.tab_inactive_index_format,
-                    &c.tab_inactive_name_format,
-                    &c.tab_inactive_sync_format,
-                    &c.tab_inactive_fullscreen_format,
-                )
-            };
-            // (placeholder, value, format template, optional style override)
-            let subs: &[(&str, &str, &str, &Option<WidgetStyle>)] = &[
-                ("index", &index_text, idx_fmt, idx_style),
-                ("name", &tab.name, name_fmt, name_style),
-                ("sync_indicator", &sync_text, sync_fmt, sync_style),
-                ("fullscreen_indicator", &fs_text, fs_fmt, fs_style),
-            ];
-
-            // Tokenize the tab format and expand tokens
-            let tokens = tokenize(tab_format);
-            for token in tokens {
-                match token {
-                    Token::Literal(text) => {
-                        out.push(Span {
-                            text,
-                            fg: tab_rs.fg.clone(),
-                            bg: tab_rs.bg.clone(),
-                            attr: tab_rs.attr.clone(),
-                        });
-                    }
-                    Token::Ref(name) => {
-                        // Check if it's a tab sub-placeholder
-                        if let Some((_, value, fmt, style_override)) =
-                            subs.iter().find(|(ph, _, _, _)| *ph == name)
-                        {
-                            if !value.is_empty() {
-                                // Merge sub-placeholder style with parent tab style:
-                                // empty fields in the override inherit from tab_rs.
-                                let rs = match style_override {
-                                    Some(s) => {
-                                        let resolved = self.resolve_style(s);
-                                        ResolvedStyle {
-                                            fg: if s.fg.is_empty() { tab_rs.fg.clone() } else { resolved.fg },
-                                            bg: if s.bg.is_empty() { tab_rs.bg.clone() } else { resolved.bg },
-                                            attr: if s.attr.is_empty() { tab_rs.attr.clone() } else { resolved.attr },
-                                        }
-                                    }
-                                    None => ResolvedStyle {
-                                        fg: tab_rs.fg.clone(),
-                                        bg: tab_rs.bg.clone(),
-                                        attr: tab_rs.attr.clone(),
-                                    },
-                                };
-                                // Apply format template and expand
-                                let formatted = fmt.replace("{content}", value);
-                                self.flatten_format_with_style(
-                                    &formatted, &rs, out, depth,
-                                );
-                            }
-                        } else {
-                            // Regular widget ref (e.g., {ta_in}, {pl_right})
-                            self.flatten_widget(&name, out, depth + 1);
-                        }
-                    }
-                }
-            }
-        }
-        // Anchor after last tab
-        if !self.tabs.is_empty() {
-            out.push(anchor());
-        }
-    }
-
-    /// Flatten a command widget.
-    fn flatten_command_widget(&self, name: &str, out: &mut Vec<Span>, depth: u8) {
-        let widget = match self.hud_config.command_widgets.get(name) {
-            Some(w) => w,
-            None => return,
-        };
-        let output = match self.command_outputs.get(name) {
-            Some(o) => o,
-            None => return,
-        };
-
-        // Hide widget on failure or empty output
-        if output.exit_code != 0 || output.stdout.is_empty() {
-            return;
-        }
-
-        let rs = self.resolve_style(&widget.style);
-        let content = widget
-            .format
-            .replace("{stdout}", &output.stdout)
-            .replace("{exit_code}", &output.exit_code.to_string());
-        self.flatten_format_with_style(&content, &rs, out, depth);
-    }
-
-    /// Flatten a text widget.
-    fn flatten_text_widget(&self, name: &str, out: &mut Vec<Span>, depth: u8) {
-        let widget = match self.hud_config.text_widgets.get(name) {
-            Some(w) => w,
-            None => return,
-        };
-        let rs = self.resolve_style(&widget.style);
-        let content = widget.format.replace("{content}", &widget.content);
-        self.flatten_format_with_style(&content, &rs, out, depth);
-    }
-}
-
-// ---------------------------------------------------------------------------
 // Pass 2: Resolve positional refs + emit ANSI
 // ---------------------------------------------------------------------------
 
 /// Build ANSI escape for text attributes.
-fn attr_escape(attr: &str) -> String {
+pub fn attr_escape(attr: &str) -> String {
     if attr.is_empty() {
         return String::new();
     }
@@ -402,7 +112,7 @@ fn attr_escape(attr: &str) -> String {
 
 /// Resolve positional color references and emit an ANSI string.
 /// `bar_bg` is the fallback color at span list boundaries.
-pub(crate) fn resolve_and_emit(spans: &mut [Span], bar_bg: &Color) -> String {
+pub fn resolve_and_emit(spans: &mut [Span], bar_bg: &Color) -> String {
     // Forward pass: resolve PrevBg
     let mut last_concrete_bg = bar_bg.clone();
     for span in spans.iter_mut() {
@@ -459,15 +169,184 @@ pub(crate) fn resolve_and_emit(spans: &mut [Span], bar_bg: &Color) -> String {
 // ---------------------------------------------------------------------------
 
 /// Resolve a color string into a SpanColor, recognizing "prev_bg" and "next_bg".
-fn resolve_span_color(
-    value: &str,
-    config: &crate::config::HudConfig,
-    mode: zellij_tile::prelude::InputMode,
-) -> SpanColor {
+pub fn resolve_span_color(value: &str, config: &HudConfig, mode: InputMode) -> SpanColor {
     match value {
         "" => SpanColor::Concrete(Color::None),
         "prev_bg" => SpanColor::PrevBg,
         "next_bg" => SpanColor::NextBg,
         _ => SpanColor::Concrete(config.resolve_color_with_accent(value, &config.palette, mode)),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn lit(s: &str) -> Span {
+        Span {
+            text: s.to_string(),
+            fg: SpanColor::Concrete(Color::None),
+            bg: SpanColor::Concrete(Color::None),
+            attr: String::new(),
+        }
+    }
+
+    fn rgb(r: u8, g: u8, b: u8) -> Color {
+        Color::Rgb(r, g, b)
+    }
+
+    fn token_strings(format_str: &str) -> Vec<String> {
+        tokenize(format_str)
+            .into_iter()
+            .map(|t| match t {
+                Token::Literal(s) => format!("L:{}", s),
+                Token::Ref(s) => format!("R:{}", s),
+            })
+            .collect()
+    }
+
+    #[test]
+    fn tokenize_splits_literals_and_refs() {
+        assert_eq!(
+            token_strings(" hello {name} world "),
+            vec!["L: hello ", "R:name", "L: world "],
+        );
+    }
+
+    #[test]
+    fn tokenize_handles_no_refs_as_single_literal() {
+        assert_eq!(token_strings("plain text"), vec!["L:plain text"]);
+    }
+
+    #[test]
+    fn tokenize_keeps_unclosed_brace_as_literal() {
+        // Avoid silent loss: a stray `{` must end up in the output.
+        assert_eq!(token_strings("a {b"), vec!["L:a {b"]);
+    }
+
+    #[test]
+    fn tokenize_treats_empty_braces_as_text_minus_closing_brace() {
+        // `{}` isn't a valid widget reference. The current parser keeps the
+        // opening `{` and consumes the `}` (the `}` is treated as the
+        // terminator of an empty ref, then the empty ref falls back to the
+        // literal-with-`{` branch). Pinning this exact behaviour so a future
+        // refactor doesn't silently change it.
+        assert_eq!(token_strings("a{}b"), vec!["L:a{b"]);
+    }
+
+    #[test]
+    fn tokenize_handles_adjacent_refs() {
+        assert_eq!(
+            token_strings("{a}{b}"),
+            vec!["R:a", "R:b"],
+        );
+    }
+
+    #[test]
+    fn attr_escape_emits_bold_italic_combinations() {
+        assert_eq!(attr_escape(""), "");
+        assert_eq!(attr_escape("bold"), "\x1b[1m");
+        assert_eq!(attr_escape("italic"), "\x1b[3m");
+        assert_eq!(attr_escape("bold,italic"), "\x1b[1m\x1b[3m");
+        // Whitespace tolerated
+        assert_eq!(attr_escape("bold, italic"), "\x1b[1m\x1b[3m");
+        // Unknown values silently ignored
+        assert_eq!(attr_escape("rainbow"), "");
+    }
+
+    #[test]
+    fn resolve_and_emit_resolves_prev_bg_in_forward_pass() {
+        // [bg=red] [fg=PrevBg, bg=blue] → middle's fg becomes red.
+        let mut spans = vec![
+            Span {
+                text: "X".into(),
+                fg: SpanColor::Concrete(Color::None),
+                bg: SpanColor::Concrete(rgb(255, 0, 0)),
+                attr: String::new(),
+            },
+            Span {
+                text: "Y".into(),
+                fg: SpanColor::PrevBg,
+                bg: SpanColor::Concrete(rgb(0, 0, 255)),
+                attr: String::new(),
+            },
+        ];
+        let _ = resolve_and_emit(&mut spans, &Color::None);
+        match &spans[1].fg {
+            SpanColor::Concrete(Color::Rgb(255, 0, 0)) => (),
+            other => panic!("expected fg=red, got {:?}", color_label(other)),
+        }
+    }
+
+    #[test]
+    fn resolve_and_emit_resolves_next_bg_in_backward_pass() {
+        // [fg=NextBg, bg=red] [bg=blue] → first's fg becomes blue.
+        let mut spans = vec![
+            Span {
+                text: "X".into(),
+                fg: SpanColor::NextBg,
+                bg: SpanColor::Concrete(rgb(255, 0, 0)),
+                attr: String::new(),
+            },
+            Span {
+                text: "Y".into(),
+                fg: SpanColor::Concrete(Color::None),
+                bg: SpanColor::Concrete(rgb(0, 0, 255)),
+                attr: String::new(),
+            },
+        ];
+        let _ = resolve_and_emit(&mut spans, &Color::None);
+        match &spans[0].fg {
+            SpanColor::Concrete(Color::Rgb(0, 0, 255)) => (),
+            other => panic!("expected fg=blue, got {:?}", color_label(other)),
+        }
+    }
+
+    #[test]
+    fn resolve_and_emit_falls_back_to_bar_bg_at_boundaries() {
+        // Single span asking for PrevBg — there's nothing before, so it
+        // must fall back to bar_bg.
+        let bar_bg = rgb(10, 20, 30);
+        let mut spans = vec![Span {
+            text: "X".into(),
+            fg: SpanColor::PrevBg,
+            bg: SpanColor::Concrete(Color::None),
+            attr: String::new(),
+        }];
+        let _ = resolve_and_emit(&mut spans, &bar_bg);
+        match &spans[0].fg {
+            SpanColor::Concrete(Color::Rgb(10, 20, 30)) => (),
+            other => panic!("expected fg=bar_bg, got {:?}", color_label(other)),
+        }
+    }
+
+    #[test]
+    fn resolve_and_emit_skips_empty_text_spans() {
+        // Empty-text spans are anchors used to thread positional colors;
+        // they must not produce any output bytes.
+        let mut spans = vec![
+            lit(""),
+            Span {
+                text: "ok".into(),
+                fg: SpanColor::Concrete(Color::None),
+                bg: SpanColor::Concrete(Color::None),
+                attr: String::new(),
+            },
+            lit(""),
+        ];
+        let out = resolve_and_emit(&mut spans, &Color::None);
+        assert!(out.contains("ok"));
+        // The reset prefix is per non-empty span; one occurrence => one span.
+        assert_eq!(out.matches("\x1b[0m").count(), 1);
+    }
+
+    fn color_label(c: &SpanColor) -> &'static str {
+        match c {
+            SpanColor::Concrete(Color::None) => "Concrete(None)",
+            SpanColor::Concrete(Color::Rgb(_, _, _)) => "Concrete(Rgb)",
+            SpanColor::Concrete(Color::EightBit(_)) => "Concrete(EightBit)",
+            SpanColor::PrevBg => "PrevBg",
+            SpanColor::NextBg => "NextBg",
+        }
     }
 }

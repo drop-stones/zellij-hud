@@ -3,6 +3,18 @@ name = "zellij-hud"
 version = "0.2.1"
 edition = "2021"
 
+[lib]
+name = "zellij_hud"
+path = "src/lib.rs"
+
+[[bin]]
+name = "zellij-hud"
+path = "src/main.rs"
+# `cargo test` cannot link the bin on host: zellij-tile's shim functions
+# reference wasm host imports (e.g. `host_run_plugin_command`) that are
+# unresolved on x86_64. Pure logic lives in the lib and is tested there.
+test = false
+
 [dependencies]
 serde_json = "1"
 unicode-width = "0.2.2"
