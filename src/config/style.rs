@@ -352,3 +352,156 @@ pub struct TextWidget {
     /// Format template. Placeholder: {content}. Default: "{content}".
     pub format: String,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use super::super::theme::ThemePalette;
+
+    // ---- WidgetStyle ----
+
+    #[test]
+    fn widget_style_new_stores_each_field() {
+        let s = WidgetStyle::new("blue", "surface", "bold");
+        assert_eq!(s.fg, "blue");
+        assert_eq!(s.bg, "surface");
+        assert_eq!(s.attr, "bold");
+    }
+
+    #[test]
+    fn widget_style_default_is_all_empty_strings() {
+        // Empty strings mean "no override / inherit" downstream — pin that.
+        let s = WidgetStyle::default();
+        assert_eq!(s.fg, "");
+        assert_eq!(s.bg, "");
+        assert_eq!(s.attr, "");
+    }
+
+    // ---- StyleDefaults presets ----
+
+    const PRESETS: &[&str] = &[
+        "simple",
+        "minimal",
+        "powerline",
+        "bubble",
+        "custom",
+    ];
+
+    #[test]
+    fn style_defaults_each_preset_has_well_formed_layout() {
+        // Every preset must yield non-panicking values for the layout fields.
+        // Empty format strings are allowed (e.g., custom and minimal use them
+        // for sections they don't render).
+        for name in PRESETS {
+            let d = StyleDefaults::from_name(name);
+            // bar_bg is either "bg" or "" (minimal goes transparent).
+            assert!(
+                d.bar_bg == "bg" || d.bar_bg.is_empty(),
+                "preset {name}: unexpected bar_bg={:?}",
+                d.bar_bg,
+            );
+            // mode_format must contain {content}; otherwise the mode widget
+            // would render as a literal template — a silent regression.
+            assert!(
+                d.mode_format.contains("{content}"),
+                "preset {name}: mode_format missing {{content}}: {:?}",
+                d.mode_format,
+            );
+        }
+    }
+
+    #[test]
+    fn style_defaults_unknown_name_falls_through_to_simple() {
+        // The match's wildcard arm is the "simple" default — pin that contract
+        // so a future restructure doesn't accidentally change the fallback.
+        let unknown = StyleDefaults::from_name("does-not-exist");
+        let simple = StyleDefaults::from_name("simple");
+        assert_eq!(unknown.format_left, simple.format_left);
+        assert_eq!(unknown.format_right, simple.format_right);
+        assert_eq!(unknown.bar_bg, simple.bar_bg);
+    }
+
+    #[test]
+    fn style_defaults_minimal_centres_tabs() {
+        // Minimal style is the only built-in to use format_center for tabs.
+        // If this changes, the rendering invariant ("non-empty center =
+        // absolute centring") needs a re-think.
+        let d = StyleDefaults::from_name("minimal");
+        assert_eq!(d.format_center, "{tabs}");
+    }
+
+    #[test]
+    fn style_defaults_bubble_uses_pill_widgets_in_format() {
+        // Bubble style depends on pill_left/pill_right text widgets being
+        // referenced in the format strings; pin that so accidental edits
+        // don't strip them.
+        let d = StyleDefaults::from_name("bubble");
+        assert!(d.format_left.contains("{pill_right}"));
+        assert!(d.format_left.contains("{pill_left}"));
+        assert!(d.format_right.contains("{pill_left}"));
+        assert!(d.format_right.contains("{pill_right}"));
+    }
+
+    #[test]
+    fn style_defaults_powerline_uses_arrow_text_widgets() {
+        // Powerline style depends on the s_* arrow widgets and ta_/ti_
+        // tab arrow widgets. Catch accidental removal.
+        let d = StyleDefaults::from_name("powerline");
+        assert!(d.format_left.contains("{s_ms}"));
+        assert!(d.format_left.contains("{s_sb}"));
+        assert!(d.tab_active_format.contains("{ta_in}"));
+        assert!(d.tab_active_format.contains("{ta_out}"));
+        assert!(d.tab_inactive_format.contains("{ti_in}"));
+        assert!(d.tab_inactive_format.contains("{ti_out}"));
+    }
+
+    #[test]
+    fn style_defaults_custom_is_blank_slate() {
+        // The "custom" preset is the documented blank-slate starting point —
+        // empty format strings, no command_overrides. Pin that contract.
+        let d = StyleDefaults::from_name("custom");
+        assert!(d.format_left.is_empty());
+        assert!(d.format_center.is_empty());
+        assert!(d.format_right.is_empty());
+        assert!(d.command_overrides.is_empty());
+        assert!(d.mode_content.is_empty());
+    }
+
+    // ---- IconColors ----
+
+    #[test]
+    fn icon_colors_from_palette_resolves_each_category() {
+        let p = ThemePalette::default();
+        let icons = IconColors::from_palette(&p);
+        // Tokyonight default has hex colors so each field should be Rgb.
+        for (label, color) in [
+            ("navigation", &icons.navigation),
+            ("create", &icons.create),
+            ("close", &icons.close),
+            ("resize", &icons.resize),
+            ("toggle", &icons.toggle),
+            ("search", &icons.search),
+            ("mode_switch", &icons.mode_switch),
+            ("plugin", &icons.plugin),
+            ("dim", &icons.dim),
+        ] {
+            assert!(
+                matches!(color, Color::Rgb(_, _, _)),
+                "{label} did not resolve to Rgb",
+            );
+        }
+    }
+
+    #[test]
+    fn icon_colors_from_palette_falls_back_to_default_on_unparseable() {
+        // Any field that can't be parsed by Color::from_hex falls back to
+        // Color::None — pin that so a typo in a user palette override
+        // produces a visible blank, not a panic.
+        let mut p = ThemePalette::default();
+        p.cyan = "not a color".into();
+        let icons = IconColors::from_palette(&p);
+        assert!(matches!(icons.navigation, Color::None));
+        // Unaffected fields still resolve.
+        assert!(matches!(icons.create, Color::Rgb(_, _, _)));
+    }
+}
