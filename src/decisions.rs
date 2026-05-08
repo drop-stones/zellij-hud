@@ -7,6 +7,7 @@
 
 use zellij_tile::prelude::InputMode;
 
+use crate::role::Role;
 use crate::tooltip_layout::is_tooltip_hidden_mode;
 
 /// Outcome of a mode_sync pipe message after the envelope has been parsed
@@ -71,6 +72,131 @@ pub fn decide_mode_sync(
         new_self_mode,
         tooltip_needs_resize: false,
         should_render: mode_changed && payload_mode != base_mode,
+    }
+}
+
+/// Outcome of a `ModeUpdate` event for any role.
+///
+/// Each bool corresponds to one side-effect the bin-side caller should
+/// invoke; `new_self_mode` carries an `Option` because some role/state
+/// combinations skip the mode update to avoid a flash before close.
+#[derive(Debug, PartialEq, Eq)]
+pub struct ModeUpdateDecision {
+    pub new_self_mode: Option<InputMode>,
+    pub close_hud: bool,
+    pub close_tooltip: bool,
+    pub daemon_try_spawn: bool,
+    pub broadcast_mode_sync: bool,
+    pub tooltip_needs_resize: bool,
+    pub should_render: bool,
+}
+
+impl ModeUpdateDecision {
+    fn noop() -> Self {
+        Self {
+            new_self_mode: None,
+            close_hud: false,
+            close_tooltip: false,
+            daemon_try_spawn: false,
+            broadcast_mode_sync: false,
+            tooltip_needs_resize: false,
+            should_render: false,
+        }
+    }
+}
+
+/// Decide what to do for a `ModeUpdate` event, given the role-specific bits
+/// of state. Daemon owns the lifecycle (close/spawn/broadcast); HUD and
+/// Tooltip just react to their spawning client's mode if they're the active
+/// clone and skip rendering across base-mode transitions to avoid a flash.
+///
+/// `is_initial` is the "this is the first ModeUpdate after spawn" flag —
+/// only the Tooltip uses it, to render once even when self.mode (seeded from
+/// spawn config) already matches the event's mode.
+#[allow(clippy::too_many_arguments)]
+pub fn decide_mode_update(
+    role: Role,
+    new_mode: InputMode,
+    base_mode: InputMode,
+    current_mode: InputMode,
+    is_active_clone: bool,
+    has_permission: bool,
+    hud_is_open: bool,
+    tooltip_is_open: bool,
+    is_initial: bool,
+) -> ModeUpdateDecision {
+    match role {
+        Role::Hud => {
+            // Skip self.mode update on transition to base: the daemon's
+            // close_hud pipe will close us shortly, and rendering the
+            // base-mode label briefly would flash.
+            let new_self_mode = if is_active_clone && new_mode != base_mode {
+                Some(new_mode)
+            } else {
+                None
+            };
+            // Same flash avoidance applies to the render gate.
+            let should_render = !(is_active_clone && new_mode == base_mode);
+            ModeUpdateDecision {
+                new_self_mode,
+                should_render,
+                ..ModeUpdateDecision::noop()
+            }
+        }
+        Role::Tooltip => {
+            // Active clones react to their own ModeUpdate immediately, to
+            // avoid the mode_sync pipe round-trip's perceptible delay.
+            // Non-active clones wait for mode_sync (their own ModeUpdate
+            // reflects *their* client's mode, not the spawner's).
+            let active_change = is_active_clone && current_mode != new_mode;
+            let new_self_mode = if active_change { Some(new_mode) } else { None };
+            let hidden = is_tooltip_hidden_mode(new_mode, base_mode);
+            // Hidden modes (rename / enter_search) skip the resize+render
+            // path: the Daemon's close_tooltip pipe will close us shortly.
+            let tooltip_active_changed = active_change && !hidden;
+            // Initial-render fallback: when self.mode (seeded from spawn
+            // config) already matches new_mode, mode_sync will fire with
+            // mode_changed=false and won't render — so render once here.
+            let initial_render = is_initial
+                && (active_change || current_mode == new_mode);
+            ModeUpdateDecision {
+                new_self_mode,
+                tooltip_needs_resize: tooltip_active_changed,
+                should_render: tooltip_active_changed || initial_render,
+                ..ModeUpdateDecision::noop()
+            }
+        }
+        Role::Daemon => {
+            // Daemon always tracks the latest mode (drives the lifecycle).
+            let new_self_mode = Some(new_mode);
+            if !has_permission {
+                // Pre-permission: track mode but skip lifecycle work.
+                return ModeUpdateDecision {
+                    new_self_mode,
+                    should_render: true,
+                    ..ModeUpdateDecision::noop()
+                };
+            }
+            let returning_to_base = new_mode == base_mode;
+            let close_hud = returning_to_base && hud_is_open;
+            let close_tooltip = if returning_to_base {
+                tooltip_is_open
+            } else {
+                is_tooltip_hidden_mode(new_mode, base_mode) && tooltip_is_open
+            };
+            // daemon_try_spawn handles mode_info_sync for newly spawned
+            // instances; we run it on every non-base ModeUpdate.
+            let daemon_try_spawn = !returning_to_base;
+            ModeUpdateDecision {
+                new_self_mode,
+                close_hud,
+                close_tooltip,
+                daemon_try_spawn,
+                broadcast_mode_sync: true,
+                should_render: true,
+                ..ModeUpdateDecision::noop()
+            }
+        }
     }
 }
 

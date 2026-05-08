@@ -11,7 +11,7 @@ use std::path::PathBuf;
 use zellij_hud::{action_types, config, keybinds};
 use zellij_hud::commands::{shell_escape, CMD_CONTEXT_USER, CommandOutput};
 use zellij_hud::input_mode::mode_from_str;
-use zellij_hud::decisions::decide_mode_sync;
+use zellij_hud::decisions::{decide_mode_sync, decide_mode_update};
 use zellij_hud::pipe::{
     parse_client_prefixed, parse_close_payload, parse_cmd_update_payload, parse_mode_sync_payload,
 };
@@ -566,81 +566,40 @@ impl ZellijPlugin for State {
 
                 let base = self.resolve_base_mode();
                 let is_active_clone = self.own_client_id == self.spawned_for_client;
-                // For active clones, react to ModeUpdate immediately to avoid the
-                // mode_sync pipe roundtrip (~50-100 ms perceptible delay).
-                // Non-active clones still wait for mode_sync because their own
-                // ModeUpdate reflects *their* client's mode, not the spawning
-                // client's mode that the HUD/Tooltip is supposed to display.
-                let mut tooltip_active_changed = false;
 
-                match self.role {
-                    Role::Hud => {
-                        // Skip self.mode update when transitioning to base
-                        // mode: the Daemon's close_hud pipe will close this
-                        // instance shortly, and rendering the base-mode label
-                        // ("LOCKED" etc.) before the close causes a flash.
-                        if is_active_clone && new_mode != base {
-                            self.mode = new_mode;
-                        }
-                    }
-                    Role::Tooltip => {
-                        if is_active_clone && self.mode != new_mode {
-                            self.mode = new_mode;
-                            // Hidden modes will be closed by the Daemon's
-                            // close_tooltip pipe; do not resize/render or the
-                            // user sees a flash at old dimensions.
-                            if !is_tooltip_hidden_mode(new_mode, base) {
-                                self.tooltip_needs_resize = true;
-                                tooltip_active_changed = true;
-                            }
-                        }
-                    }
-                    Role::Daemon => {
-                        self.mode = new_mode;
-                        if self.has_permission {
-                            if new_mode == base {
-                                // Mode returned to base: close immediately.
-                                if self.hud_is_open {
-                                    self.close_hud_via_pipe();
-                                    self.hud_is_open = false;
-                                }
-                                if self.tooltip_is_open {
-                                    self.close_tooltip_via_pipe();
-                                    self.tooltip_is_open = false;
-                                }
-                            } else {
-                                // Close tooltip for hidden modes (rename/enter_search).
-                                if is_tooltip_hidden_mode(new_mode, base) && self.tooltip_is_open {
-                                    self.close_tooltip_via_pipe();
-                                    self.tooltip_is_open = false;
-                                }
-                                // daemon_try_spawn handles mode_info_sync for
-                                // newly spawned instances; mode_sync is always
-                                // sent here (once) for all existing instances.
-                                self.daemon_try_spawn();
-                            }
-                            self.broadcast_mode_sync();
-                        }
-                    }
-                }
+                let decision = decide_mode_update(
+                    self.role,
+                    new_mode,
+                    base,
+                    self.mode,
+                    is_active_clone,
+                    self.has_permission,
+                    self.hud_is_open,
+                    self.tooltip_is_open,
+                    is_initial,
+                );
 
-                let _ = base;
-                // Tooltip render conditions:
-                // - active clone observed a visible mode change (immediate render
-                //   path); or
-                // - this is the first ModeUpdate after spawn and self.mode (from
-                //   spawn config) already matches new_mode, so mode_sync will not
-                //   trigger a render later (mode_changed=false).
-                if self.role == Role::Tooltip {
-                    return tooltip_active_changed
-                        || (is_initial && self.mode == new_mode);
+                if let Some(m) = decision.new_self_mode {
+                    self.mode = m;
                 }
-                // HUD active clone: suppress render on base-mode transition
-                // (see comment in Role::Hud match arm above).
-                if self.role == Role::Hud && is_active_clone && new_mode == base {
-                    return false;
+                if decision.close_hud {
+                    self.close_hud_via_pipe();
+                    self.hud_is_open = false;
                 }
-                true
+                if decision.close_tooltip {
+                    self.close_tooltip_via_pipe();
+                    self.tooltip_is_open = false;
+                }
+                if decision.daemon_try_spawn {
+                    self.daemon_try_spawn();
+                }
+                if decision.broadcast_mode_sync {
+                    self.broadcast_mode_sync();
+                }
+                if decision.tooltip_needs_resize {
+                    self.tooltip_needs_resize = true;
+                }
+                decision.should_render
             }
             Event::TabUpdate(tabs) => {
                 let old_tabs = std::mem::replace(&mut self.tabs, tabs);
