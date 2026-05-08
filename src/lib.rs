@@ -11,3 +11,4 @@ pub mod commands;
 pub mod config;
 pub mod keybinds;
 pub mod spans;
+pub mod text;

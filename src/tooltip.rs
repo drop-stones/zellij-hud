@@ -2,7 +2,7 @@ use zellij_tile::prelude::*;
 
 use crate::action_types::ActionType;
 use crate::keybinds::{get_actions_for_mode, ModeActions};
-use crate::render::visible_len;
+use zellij_hud::text::visible_len;
 use crate::State;
 
 /// Pane frame overhead: 1 top + 1 bottom border row.

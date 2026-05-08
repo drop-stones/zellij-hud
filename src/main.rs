@@ -25,7 +25,7 @@ fn shell_escape(s: &str) -> Cow<'_, str> {
     }
 }
 use config::HudConfig;
-use render::visible_len;
+use zellij_hud::text::visible_len;
 
 pub(crate) const CONFIG_IS_HUD: &str = "is_hud";
 pub(crate) const CONFIG_IS_TOOLTIP: &str = "is_tooltip";
