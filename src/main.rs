@@ -8,24 +8,14 @@ use zellij_tile::prelude::*;
 use std::collections::{BTreeMap, HashMap};
 use std::path::PathBuf;
 
-use std::borrow::Cow;
-
 use zellij_hud::{action_types, config, keybinds};
-use zellij_hud::commands::{CMD_CONTEXT_USER, CommandOutput};
-
-/// Single-quote a string for safe use in sh -c commands.
-fn shell_escape(s: &str) -> Cow<'_, str> {
-    if s.is_empty() {
-        return Cow::Borrowed("''");
-    }
-    if s.bytes().all(|b| matches!(b, b'a'..=b'z' | b'A'..=b'Z' | b'0'..=b'9' | b'_' | b'-' | b'.' | b'/')) {
-        Cow::Borrowed(s)
-    } else {
-        Cow::Owned(format!("'{}'", s.replace('\'', "'\\''")))
-    }
-}
-use config::HudConfig;
+use zellij_hud::commands::{shell_escape, CMD_CONTEXT_USER, CommandOutput};
+use zellij_hud::input_mode::mode_from_str;
+use zellij_hud::pipe::parse_close_payload;
 use zellij_hud::text::visible_len;
+use zellij_hud::tooltip_layout::is_tooltip_hidden_mode;
+
+use config::HudConfig;
 
 pub(crate) const CONFIG_IS_HUD: &str = "is_hud";
 pub(crate) const CONFIG_IS_TOOLTIP: &str = "is_tooltip";
@@ -403,44 +393,6 @@ impl State {
         // HUD: render on mode change, except when transitioning to base mode
         // (avoid a "LOCKED" flash before close).
         mode_changed && mode != base
-    }
-}
-
-/// Modes where the tooltip should not be shown (base mode + text input modes).
-fn is_tooltip_hidden_mode(mode: InputMode, base_mode: InputMode) -> bool {
-    mode == base_mode
-        || matches!(
-            mode,
-            InputMode::RenamePane | InputMode::RenameTab | InputMode::EnterSearch
-        )
-}
-
-/// Parse a "client_id:seq" close pipe payload.
-fn parse_close_payload(payload: &str) -> Option<(u16, u32)> {
-    let (cid_str, seq_str) = payload.split_once(':')?;
-    let cid: u16 = cid_str.parse().ok()?;
-    let seq: u32 = seq_str.parse().ok()?;
-    Some((cid, seq))
-}
-
-/// Parse an InputMode from its Debug string representation (e.g. "Normal", "Pane").
-fn mode_from_str(s: &str) -> Option<InputMode> {
-    match s {
-        "Locked" => Some(InputMode::Locked),
-        "Normal" => Some(InputMode::Normal),
-        "Pane" => Some(InputMode::Pane),
-        "Tab" => Some(InputMode::Tab),
-        "Resize" => Some(InputMode::Resize),
-        "Move" => Some(InputMode::Move),
-        "Scroll" => Some(InputMode::Scroll),
-        "Search" => Some(InputMode::Search),
-        "EnterSearch" => Some(InputMode::EnterSearch),
-        "RenameTab" => Some(InputMode::RenameTab),
-        "RenamePane" => Some(InputMode::RenamePane),
-        "Session" => Some(InputMode::Session),
-        "Prompt" => Some(InputMode::Prompt),
-        "Tmux" => Some(InputMode::Tmux),
-        _ => None,
     }
 }
 

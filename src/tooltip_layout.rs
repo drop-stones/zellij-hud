@@ -16,6 +16,18 @@ pub const FRAME_ROWS: usize = 2;
 /// Pane frame overhead: 1 left + 1 right border col.
 pub const FRAME_COLS: usize = 2;
 
+/// Modes where the tooltip should not be shown (base mode + text input modes).
+///
+/// Text input modes (RenamePane, RenameTab, EnterSearch) are excluded because
+/// the keybinding hints would obscure the user's typing target.
+pub fn is_tooltip_hidden_mode(mode: InputMode, base_mode: InputMode) -> bool {
+    mode == base_mode
+        || matches!(
+            mode,
+            InputMode::RenamePane | InputMode::RenameTab | InputMode::EnterSearch
+        )
+}
+
 /// Calculate tooltip pane size for a specific mode (content + manual border if enabled).
 /// Returns (0, 0) when the mode has no actions to display.
 pub fn tooltip_size(mode_info: &ModeInfo, mode: InputMode, border: bool) -> (usize, usize) {
