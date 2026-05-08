@@ -14,6 +14,7 @@ use zellij_hud::input_mode::mode_from_str;
 use zellij_hud::pipe::{
     parse_client_prefixed, parse_close_payload, parse_cmd_update_payload, parse_mode_sync_payload,
 };
+use zellij_hud::tabs::tabs_changed_visibly;
 use zellij_hud::text::visible_len;
 use zellij_hud::tooltip_layout::is_tooltip_hidden_mode;
 
@@ -661,19 +662,7 @@ impl ZellijPlugin for State {
             }
             Event::TabUpdate(tabs) => {
                 let old_tabs = std::mem::replace(&mut self.tabs, tabs);
-                let mut should_render = false;
-
-                // Check if tab list changed (names, count, active state)
-                if old_tabs.len() != self.tabs.len()
-                    || old_tabs.iter().zip(self.tabs.iter()).any(|(a, b)| {
-                        a.active != b.active
-                            || a.name != b.name
-                            || a.is_sync_panes_active != b.is_sync_panes_active
-                            || a.is_fullscreen_active != b.is_fullscreen_active
-                    })
-                {
-                    should_render = true;
-                }
+                let should_render = tabs_changed_visibly(&old_tabs, &self.tabs);
 
                 if self.role == Role::Hud || self.role == Role::Tooltip {
                     self.follow_active_tab();
