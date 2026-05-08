@@ -13,6 +13,7 @@ pub mod decisions;
 pub mod input_mode;
 pub mod keybinds;
 pub mod pipe;
+pub mod role;
 pub mod spans;
 pub mod tabs;
 pub mod text;

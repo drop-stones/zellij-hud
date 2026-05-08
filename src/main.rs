@@ -15,6 +15,7 @@ use zellij_hud::decisions::decide_mode_sync;
 use zellij_hud::pipe::{
     parse_client_prefixed, parse_close_payload, parse_cmd_update_payload, parse_mode_sync_payload,
 };
+use zellij_hud::role::Role;
 use zellij_hud::tabs::tabs_changed_visibly;
 use zellij_hud::text::visible_len;
 use zellij_hud::tooltip_layout::is_tooltip_hidden_mode;
@@ -27,18 +28,6 @@ pub(crate) const CONFIG_IS_TOOLTIP: &str = "is_tooltip";
 pub(crate) const CONFIG_SPAWNED_FOR_CLIENT: &str = "spawned_for_client";
 /// Config key for the per-spawn sequence number used to filter stale close pipes.
 pub(crate) const CONFIG_SPAWN_SEQ: &str = "spawn_seq";
-
-/// Plugin role within the zellij-hud system.
-#[derive(Default, PartialEq)]
-pub(crate) enum Role {
-    /// Background daemon that spawns HUD and tooltip panes.
-    #[default]
-    Daemon,
-    /// Floating status bar at the bottom.
-    Hud,
-    /// Floating which-key tooltip at the bottom-right.
-    Tooltip,
-}
 
 /// On-demand floating status bar and keybinding tooltip for zellij.
 ///
