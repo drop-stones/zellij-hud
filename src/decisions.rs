@@ -49,9 +49,10 @@ pub fn decide_mode_sync(
     };
 
     if is_tooltip {
-        // Hidden modes (rename / enter_search): skip render so the user
-        // doesn't see a flash of the wrong keybinding hints at old
-        // dimensions before the Daemon closes us.
+        // Hidden modes (base mode + rename / enter_search per
+        // `is_tooltip_hidden_mode`): skip render so the user doesn't see a
+        // flash of the wrong keybinding hints at old dimensions before the
+        // Daemon closes us.
         if is_tooltip_hidden_mode(payload_mode, base_mode) {
             return ModeSyncDecision {
                 new_self_mode,
@@ -292,10 +293,10 @@ mod tests {
     // decide_mode_update
     // -----------------------------------------------------------------------
 
-    /// Helper: build a ModeUpdate decision for the common parameters most
-    /// tests care about. Tests that need a non-default value override it on
-    /// the returned struct via the `with_*` setters or call the function
-    /// directly with the explicit args.
+    /// Helper: build a ModeUpdate decision in tests with the common
+    /// argument order spelled out once. Tests that need different inputs
+    /// just call this with different positional args (or call
+    /// `decide_mode_update` directly).
     fn mu(
         role: Role,
         new: InputMode,
