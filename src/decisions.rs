@@ -31,12 +31,27 @@ pub struct ModeSyncDecision {
 /// `is_tooltip = true` selects the tooltip-specific branches (hidden-mode
 /// gating, resize flagging). Daemons are pre-filtered by the bin-side
 /// handler and never reach here.
+///
+/// `is_active_clone = true` (i.e. `own_client_id == spawned_for_client`) skips
+/// the entire pipe path: active clones already drive themselves via their own
+/// `ModeUpdate`, and processing the pipe on top causes a visible flicker from
+/// the ModeUpdate render and pipe render racing. The pipe is only meaningful
+/// for passive clones (other clients sharing the session-level floating pane)
+/// which don't receive the spawner's ModeUpdate.
 pub fn decide_mode_sync(
     is_tooltip: bool,
+    is_active_clone: bool,
     current_mode: InputMode,
     payload_mode: InputMode,
     base_mode: InputMode,
 ) -> ModeSyncDecision {
+    if is_active_clone {
+        return ModeSyncDecision {
+            new_self_mode: None,
+            tooltip_needs_resize: false,
+            should_render: false,
+        };
+    }
     let mode_changed = current_mode != payload_mode;
 
     // Skip self.mode update when transitioning to base mode: the Daemon's
@@ -210,7 +225,7 @@ mod tests {
     #[test]
     fn hud_unchanged_mode_yields_no_render_no_update() {
         // current == payload → no-op for both fields and the return value.
-        let d = decide_mode_sync(false, InputMode::Pane, InputMode::Pane, InputMode::Normal);
+        let d = decide_mode_sync(false, false, InputMode::Pane, InputMode::Pane, InputMode::Normal);
         assert_eq!(d.new_self_mode, None);
         assert!(!d.tooltip_needs_resize);
         assert!(!d.should_render);
@@ -219,7 +234,7 @@ mod tests {
     #[test]
     fn hud_normal_mode_change_updates_self_and_renders() {
         // Pane → Tab while base=Normal: classic transition.
-        let d = decide_mode_sync(false, InputMode::Pane, InputMode::Tab, InputMode::Normal);
+        let d = decide_mode_sync(false, false, InputMode::Pane, InputMode::Tab, InputMode::Normal);
         assert_eq!(d.new_self_mode, Some(InputMode::Tab));
         assert!(!d.tooltip_needs_resize);
         assert!(d.should_render);
@@ -228,8 +243,20 @@ mod tests {
     #[test]
     fn hud_transition_to_base_does_not_update_or_render() {
         // Avoid a "Normal" flash before the daemon's close_hud pipe arrives.
-        let d = decide_mode_sync(false, InputMode::Pane, InputMode::Normal, InputMode::Normal);
+        let d = decide_mode_sync(false, false, InputMode::Pane, InputMode::Normal, InputMode::Normal);
         assert_eq!(d.new_self_mode, None);
+        assert!(!d.should_render);
+    }
+
+    #[test]
+    fn hud_active_clone_skips_pipe_entirely() {
+        // Active clones (own_client_id == spawned_for_client) react via their
+        // own ModeUpdate; pipe processing on top causes ModeUpdate/pipe render
+        // race and visible flicker. Verify the all-noop decision regardless of
+        // whether the mode actually changed.
+        let d = decide_mode_sync(false, true, InputMode::Pane, InputMode::Tab, InputMode::Normal);
+        assert_eq!(d.new_self_mode, None);
+        assert!(!d.tooltip_needs_resize);
         assert!(!d.should_render);
     }
 
@@ -237,7 +264,7 @@ mod tests {
 
     #[test]
     fn tooltip_unchanged_mode_yields_no_resize_no_render() {
-        let d = decide_mode_sync(true, InputMode::Pane, InputMode::Pane, InputMode::Normal);
+        let d = decide_mode_sync(true, false, InputMode::Pane, InputMode::Pane, InputMode::Normal);
         assert_eq!(d.new_self_mode, None);
         assert!(!d.tooltip_needs_resize);
         assert!(!d.should_render);
@@ -245,7 +272,7 @@ mod tests {
 
     #[test]
     fn tooltip_normal_mode_change_resizes_and_renders() {
-        let d = decide_mode_sync(true, InputMode::Pane, InputMode::Tab, InputMode::Normal);
+        let d = decide_mode_sync(true, false, InputMode::Pane, InputMode::Tab, InputMode::Normal);
         assert_eq!(d.new_self_mode, Some(InputMode::Tab));
         assert!(d.tooltip_needs_resize);
         assert!(d.should_render);
@@ -255,7 +282,7 @@ mod tests {
     fn tooltip_transition_to_base_does_not_update_but_does_not_render() {
         // Tooltip behaves like HUD here: skip the update so we don't render
         // the base label briefly before close.
-        let d = decide_mode_sync(true, InputMode::Pane, InputMode::Normal, InputMode::Normal);
+        let d = decide_mode_sync(true, false, InputMode::Pane, InputMode::Normal, InputMode::Normal);
         assert_eq!(d.new_self_mode, None);
         assert!(!d.should_render);
     }
@@ -270,7 +297,7 @@ mod tests {
             InputMode::RenameTab,
             InputMode::EnterSearch,
         ] {
-            let d = decide_mode_sync(true, InputMode::Pane, hidden, InputMode::Normal);
+            let d = decide_mode_sync(true, false, InputMode::Pane, hidden, InputMode::Normal);
             // Mode update still happens (we'll be closing, but state is
             // recorded for any subsequent decision); render is suppressed.
             assert_eq!(d.new_self_mode, Some(hidden), "hidden={hidden:?}");
@@ -280,11 +307,21 @@ mod tests {
     }
 
     #[test]
+    fn tooltip_active_clone_skips_pipe_entirely() {
+        // Same rationale as the HUD case: active clones drive themselves via
+        // their own ModeUpdate; processing the pipe on top causes flicker.
+        let d = decide_mode_sync(true, true, InputMode::Pane, InputMode::Tab, InputMode::Normal);
+        assert_eq!(d.new_self_mode, None);
+        assert!(!d.tooltip_needs_resize);
+        assert!(!d.should_render);
+    }
+
+    #[test]
     fn hud_does_not_skip_render_for_text_input_modes() {
         // The hidden-mode skip is a Tooltip-only concern. The HUD continues
         // to render across rename/search transitions because its content
         // (mode label) is still meaningful.
-        let d = decide_mode_sync(false, InputMode::Pane, InputMode::RenamePane, InputMode::Normal);
+        let d = decide_mode_sync(false, false, InputMode::Pane, InputMode::RenamePane, InputMode::Normal);
         assert_eq!(d.new_self_mode, Some(InputMode::RenamePane));
         assert!(d.should_render);
     }
