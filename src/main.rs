@@ -359,6 +359,7 @@ impl State {
         let base = self.resolve_base_mode();
         let decision = decide_mode_sync(
             self.role == Role::Tooltip,
+            self.own_client_id == self.spawned_for_client,
             self.mode,
             mode,
             base,
