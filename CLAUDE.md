@@ -358,7 +358,7 @@ Themes provide: palette colors (12 colors including surface/surface_bright) + mo
 
 Available themes: system (default, uses zellij's palette), tokyonight, catppuccin-mocha, nord, gruvbox-dark.
 
-System theme: `bg` = `ribbon_unselected.base` (maps to `palette.black` in zellij). Surface colors auto-computed via `lighten_color`.
+System theme: `fg` = `text_unselected.base`, `bg` = `text_unselected.background`. Dim is `dim_color(fg)`. Surface colors auto-computed via `lighten_color(bg, +10/+20)`. Accent colors (red/green/yellow/blue/magenta/cyan/orange) are reverse-mapped from `StyleDeclaration` fields (see `ThemePalette::from_styling`).
 
 ### Style presets
 
@@ -374,17 +374,11 @@ System theme: `bg` = `ribbon_unselected.base` (maps to `palette.black` in zellij
 
 ### System theme
 
-- [ ] Improve EightBit color handling in `dim_color`/`lighten_color` (surface/surface_bright/dim collapse to same color with 8-bit palettes)
 - [ ] Consider upstream proposal: expose raw `Palette` to plugins so `Styling` reverse-mapping is unnecessary
 
 ### Tooltip
 
 - [ ] Multi-column layout (future: `tooltip_columns "auto"`)
-
-### Documentation
-
-- [ ] Update `README.md` with current configuration spec and usage examples
-- [ ] Update `../zellij-hud.wiki/` (Configuration.md, Architecture.md, etc.)
 
 ## Upstream proposals (zellij)
 
