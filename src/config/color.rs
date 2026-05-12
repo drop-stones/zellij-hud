@@ -49,14 +49,16 @@ impl Color {
     }
 }
 
-/// Convert a 256-color terminal index to its standard RGB representation.
-/// 0–15 use xterm defaults; 16–231 are the 6×6×6 color cube; 232–255 are the
-/// grayscale ramp. Lets `dim_color` / `lighten_color` operate uniformly in RGB
-/// so surface/dim derivations don't collapse to a single index for 8-bit
-/// palettes.
+/// Convert a 256-color terminal index to an RGB approximation.
+/// 0–15 use the standard ANSI/VGA 16-color palette (the actual rendering
+/// uses whatever palette the user's terminal defines for these indices —
+/// we just need stable RGB values for derivation math). 16–231 are the
+/// xterm 6×6×6 color cube; 232–255 are the xterm grayscale ramp. Lets
+/// `dim_color` / `lighten_color` operate uniformly in RGB so surface/dim
+/// derivations don't collapse to a single index for 8-bit palettes.
 fn eightbit_to_rgb(n: u8) -> (u8, u8, u8) {
     match n {
-        // System 16 colors (xterm defaults).
+        // ANSI/VGA 16-color palette (terminal-dependent at render time).
         0 => (0, 0, 0),
         1 => (128, 0, 0),
         2 => (0, 128, 0),
@@ -246,7 +248,8 @@ mod tests {
 
     #[test]
     fn eightbit_to_rgb_named_16() {
-        // The system 16 colors map to xterm defaults.
+        // Indices 0–15 use the standard ANSI/VGA 16-color palette (a
+        // canonical approximation; actual terminal palettes vary).
         assert_eq!(eightbit_to_rgb(0), (0, 0, 0));
         assert_eq!(eightbit_to_rgb(8), (128, 128, 128)); // "bright black"
         assert_eq!(eightbit_to_rgb(15), (255, 255, 255));
