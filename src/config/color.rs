@@ -49,25 +49,71 @@ impl Color {
     }
 }
 
-/// Produce a dimmed variant of a color (50% brightness).
-pub(crate) fn dim_color(color: PaletteColor) -> PaletteColor {
-    match color {
-        PaletteColor::Rgb((r, g, b)) => PaletteColor::Rgb((r / 2, g / 2, b / 2)),
-        // EightBit(8) = "bright black" = dark gray in most terminals
-        PaletteColor::EightBit(_) => PaletteColor::EightBit(8),
+/// Convert a 256-color terminal index to an RGB approximation.
+/// 0–15 use the standard ANSI/VGA 16-color palette (the actual rendering
+/// uses whatever palette the user's terminal defines for these indices —
+/// we just need stable RGB values for derivation math). 16–231 are the
+/// xterm 6×6×6 color cube; 232–255 are the xterm grayscale ramp. Lets
+/// `dim_color` / `lighten_color` operate uniformly in RGB so surface/dim
+/// derivations don't collapse to a single index for 8-bit palettes.
+fn eightbit_to_rgb(n: u8) -> (u8, u8, u8) {
+    match n {
+        // ANSI/VGA 16-color palette (terminal-dependent at render time).
+        0 => (0, 0, 0),
+        1 => (128, 0, 0),
+        2 => (0, 128, 0),
+        3 => (128, 128, 0),
+        4 => (0, 0, 128),
+        5 => (128, 0, 128),
+        6 => (0, 128, 128),
+        7 => (192, 192, 192),
+        8 => (128, 128, 128),
+        9 => (255, 0, 0),
+        10 => (0, 255, 0),
+        11 => (255, 255, 0),
+        12 => (0, 0, 255),
+        13 => (255, 0, 255),
+        14 => (0, 255, 255),
+        15 => (255, 255, 255),
+        // 6×6×6 color cube (indices 16–231).
+        16..=231 => {
+            let i = n - 16;
+            let scale = |c: u8| if c == 0 { 0 } else { 55 + 40 * c };
+            (scale(i / 36), scale((i % 36) / 6), scale(i % 6))
+        }
+        // Grayscale ramp (indices 232–255).
+        232..=255 => {
+            let v = 8 + 10 * (n - 232);
+            (v, v, v)
+        }
     }
 }
 
-/// Lighten a color by adding `amount` to each RGB channel (clamped to 255).
-pub(crate) fn lighten_color(color: PaletteColor, amount: u8) -> PaletteColor {
+fn to_rgb(color: PaletteColor) -> (u8, u8, u8) {
     match color {
-        PaletteColor::Rgb((r, g, b)) => PaletteColor::Rgb((
-            r.saturating_add(amount),
-            g.saturating_add(amount),
-            b.saturating_add(amount),
-        )),
-        PaletteColor::EightBit(_) => PaletteColor::EightBit(8),
+        PaletteColor::Rgb((r, g, b)) => (r, g, b),
+        PaletteColor::EightBit(n) => eightbit_to_rgb(n),
     }
+}
+
+/// Produce a dimmed variant of a color (50% brightness). EightBit inputs are
+/// converted to RGB first so the result preserves the hue instead of
+/// collapsing to a single fallback index.
+pub(crate) fn dim_color(color: PaletteColor) -> PaletteColor {
+    let (r, g, b) = to_rgb(color);
+    PaletteColor::Rgb((r / 2, g / 2, b / 2))
+}
+
+/// Lighten a color by adding `amount` to each RGB channel (clamped to 255).
+/// EightBit inputs are converted to RGB first; otherwise surface and
+/// surface_bright would resolve to the same index regardless of `amount`.
+pub(crate) fn lighten_color(color: PaletteColor, amount: u8) -> PaletteColor {
+    let (r, g, b) = to_rgb(color);
+    PaletteColor::Rgb((
+        r.saturating_add(amount),
+        g.saturating_add(amount),
+        b.saturating_add(amount),
+    ))
 }
 
 /// Convert a `PaletteColor` to a hex string usable by `Color::from_hex`.
@@ -152,12 +198,11 @@ mod tests {
     }
 
     #[test]
-    fn dim_color_collapses_eightbit_to_dark_gray() {
-        // 8-bit input has no per-channel granularity, so we fall back to
-        // EightBit(8) (terminal "bright black"). Pin the exact value so a
-        // future change is intentional.
+    fn dim_color_converts_eightbit_via_rgb_table() {
+        // EightBit(220) is in the 6×6×6 cube: index 204 = (5,4,0) → (255,215,0).
+        // Dimming halves each channel.
         match dim_color(PaletteColor::EightBit(220)) {
-            PaletteColor::EightBit(8) => (),
+            PaletteColor::Rgb((127, 107, 0)) => (),
             other => panic!("got {other:?}"),
         }
     }
@@ -178,12 +223,53 @@ mod tests {
     }
 
     #[test]
-    fn lighten_color_collapses_eightbit_to_dark_gray() {
-        // Same EightBit limitation as dim_color; pin the fallback.
-        match lighten_color(PaletteColor::EightBit(220), 10) {
-            PaletteColor::EightBit(8) => (),
+    fn lighten_color_converts_eightbit_via_rgb_table() {
+        // EightBit(232) is the darkest grayscale ramp entry → (8, 8, 8).
+        // Lightening by 10 adds 10 to each channel.
+        match lighten_color(PaletteColor::EightBit(232), 10) {
+            PaletteColor::Rgb((18, 18, 18)) => (),
             other => panic!("got {other:?}"),
         }
+    }
+
+    #[test]
+    fn lighten_color_distinguishes_surface_from_surface_bright_for_eightbit() {
+        // Pin the system-theme invariant: surface = lighten(bg, +10) and
+        // surface_bright = lighten(bg, +20) must differ when bg is EightBit,
+        // even though the previous all-fallback-to-EightBit(8) behaviour
+        // collapsed them.
+        let bg = PaletteColor::EightBit(16);
+        let surface = lighten_color(bg, 10);
+        let surface_bright = lighten_color(bg, 20);
+        assert_ne!(surface, surface_bright);
+    }
+
+    // ---- eightbit_to_rgb ----
+
+    #[test]
+    fn eightbit_to_rgb_named_16() {
+        // Indices 0–15 use the standard ANSI/VGA 16-color palette (a
+        // canonical approximation; actual terminal palettes vary).
+        assert_eq!(eightbit_to_rgb(0), (0, 0, 0));
+        assert_eq!(eightbit_to_rgb(8), (128, 128, 128)); // "bright black"
+        assert_eq!(eightbit_to_rgb(15), (255, 255, 255));
+    }
+
+    #[test]
+    fn eightbit_to_rgb_color_cube() {
+        // Index 16 is the cube origin (0,0,0); index 231 is the top corner.
+        // Cube formula: 0 → 0, otherwise 55 + 40*c.
+        assert_eq!(eightbit_to_rgb(16), (0, 0, 0));
+        assert_eq!(eightbit_to_rgb(231), (255, 255, 255));
+        // Mid-cube spot check: index 124 = 108 + 16 = (3, 0, 0) → (175, 0, 0).
+        assert_eq!(eightbit_to_rgb(124), (175, 0, 0));
+    }
+
+    #[test]
+    fn eightbit_to_rgb_grayscale_ramp() {
+        // Ramp formula: 8 + 10 * (n - 232). Index 232 = 8, 255 = 238.
+        assert_eq!(eightbit_to_rgb(232), (8, 8, 8));
+        assert_eq!(eightbit_to_rgb(255), (238, 238, 238));
     }
 
     // ---- palette_color_to_hex ----

@@ -73,7 +73,7 @@ On first load, zellij will prompt you to grant the following permissions:
 ```kdl
 plugins {
     zellij-hud location="https://github.com/drop-stones/zellij-hud/releases/latest/download/zellij-hud.wasm" {
-        style "powerline"          // "simple" (default) | "minimal" | "powerline" | "bubble"
+        style "powerline"          // "simple" (default) | "minimal" | "powerline" | "bubble" | "custom"
         theme "catppuccin-mocha"   // "system" (default) | "tokyonight" | "catppuccin-mocha" | "nord" | "gruvbox-dark"
     }
 }
